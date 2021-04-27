@@ -44,7 +44,7 @@ def reproject_ds(ds,shape,dtype,gt,proj):
                         ds_reproject,
                         ds.GetProjection(),
                         proj,
-                        gdal.GRA_Bilinear,#gdal.GRA_NearestNeighbour,
+                        gdal.GRA_NearestNeighbour,#gdal.GRA_Bilinear,
                         )
     ### Get raster data only
     ds_data = ds_reproject.ReadAsArray()
@@ -99,4 +99,4 @@ def compute_chm(dsm_path, dtm_path):
     data[:,:,1] = dtm
     data[:,:,2] = data[:,:,0] - data[:,:,1]
     
-    return data
+    return data, gt, proj
