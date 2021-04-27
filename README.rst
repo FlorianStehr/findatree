@@ -10,9 +10,9 @@ Installation
 To create a `conda <https://www.anaconda.com/>`_ environment with all the necessary dependencies we provide an 
 `environment.yml <https://github.com/FlorianStehr/findatree/blob/master/environment.yml>`_.
  
- ```sh
- conda create -f environment.yml
- ```
+```bat
+(findatree) /YourPath/findatree> conda create -f environment.yml
+```
  
  This will create a conda environment 'findatree' with all the necessary depencies.
  
