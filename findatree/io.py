@@ -1,44 +1,174 @@
-from osgeo import gdal
+from typing import List
+from typing import Tuple
+
+import numpy as np
+
+import rasterio
+from rasterio.warp import reproject, Resampling
 
 
-NP2GDAL_DTYPES = {'uint8': 1,
-                  'int8': 1,
-                  'uint16': 2,
-                  'int16': 3,
-                  'uint32': 4,
-                  'int32': 5,
-                  'float32': 6,
-                  'float64': 7,
-                  'complex64': 10,
-                  'complex128': 11,
-                  }
+def print_raster_info(paths: List[str]) -> None:
+    '''
+    Quickly print some information about .tif geo-raster-file defined by paths.
+    '''
+    for i, path in enumerate(paths):
+        with rasterio.open(path) as ds:
+            print()
+            print(f"({i})")
+            print(f"Name: {ds.name}")
+            print(f"Width[px]: {ds.width}")
+            print(f"Height[px]: {ds.height}")
 
-def load_dsm(path):
+            print(f"No. of rasters: {ds.count}")
+            for i, dtype in zip(ds.indexes, ds.dtypes):
+                print(f"  Index: {i}, dtype: {dtype}")
+            
+            print(f"Nodata values: {ds.nodatavals}")
+            
+            print()
+            print(f"Coordinate reference system CRS: {ds.crs}")
+            print(f"Geo bounds: {ds.bounds}")
+            print(f"Affine geo-transfrom: {[val for val in ds.transform[:-3]]}")
+
+
+#%%
+def reproject_all_intersect(paths: List[str], res: float) -> Tuple:
+    '''
+    Reproject all rasters in raster-files (.tif) given by ``paths`` to the intersection of all rasters and a defined resolution ``res`` using rasterio package.
     
-    ### Open dsm (digital surface model )and dtm (digital terrain model)
-    ds = gdal.Open(path,gdal.GA_ReadOnly)
+    Parameters:
+    ----------
+    paths: List[str]
+        Full path names to raster-files
+    res: float
+        Resolution per px in final rasters.
+
+    Returns:
+    -------
+    dest_bands_list: List[np.ndarray]
+        List of reprojected rasters in intersection and with defined resolution ``res`` given as np.ndarray of dtype=np.float64.
+    dest_mask: np.ndarray
+        Intersection mask of all repojected rasters as np.ndarray. Valid values -> 1, Non-valid values -> np.nan.
+    dest_A: rasterio.Affine
+        Affine geo-transform (rasterio) of all reprojected rasters
+    inter_bound: dict
+        Bounds in geo-coordinates of intersection box.
     
-    ### Get projection
-    proj = ds.GetProjection()
+    Notes:
+    -----
+    * Besides bounding box also the masks of all rasters are extracted and the interesction mask (``dest_mask``) is computed.
+    * All values outside of intersection mask are assigned with numpy.nan values.
+    * All fully saturated values for specific dtype of original rasters are assigned with numpy.nan values.
+
+    '''
+    # Load bounds and CRSs of all raster-files
+    bounds = []
+    crss = []
+    for i, path in enumerate(paths):
+        with rasterio.open(path) as ds:
+            bounds.append(ds.bounds)
+            crss.append(ds.crs)
     
-    ### Get affine geotransform
-    gt = ds.GetGeoTransform()
+    # Define intersection area of all rasters
+    inter_bound = {
+        'left': 0,
+        'bottom': 0,
+        'right': 0,
+        'top': 0,
+    }
+
+    inter_bound['left'] = np.max([b.left for b in bounds])
+    inter_bound['bottom'] = np.max([b.bottom for b in bounds])
+    inter_bound['right'] = np.min([b.right for b in bounds])
+    inter_bound['top'] = np.min([b.top for b in bounds])
     
-    ### Pixel extents
-    shape = [ds.RasterXSize,ds.RasterYSize]
+    # Define common (i.e. destination) shape in px of all rasters after reprojection based on intersection area and resolution
+    dest_shape = (
+        int(np.floor((inter_bound['top'] - inter_bound['bottom']) / res)),
+        int(np.floor((inter_bound['right'] - inter_bound['left']) / res)),
+    )
     
-    ### Driver ShortName
-    driver = ds.GetDriver().ShortName
+    # Define common (i.e. destination) Affine based on intersection area and resolution
+    dest_A = rasterio.Affine(
+        res, 0, inter_bound['left'],
+        0, -res, inter_bound['top'])
+
+    # Define common (i.e. destination) coordinatereference system 
+    dest_crs = crss[0]
+
+    # Reproject rasters and masks
+    dest_bands_list = []
+    dest_mask = np.ones((dest_shape[0], dest_shape[1])) # This will be the intersection of all masks
+
+    for path in paths:
+
+        with rasterio.open(path) as ds:  # Open raster-file
+            source_crs = ds.crs
+            source_A = ds.transform
+
+            dest_bands = np.zeros((dest_shape[0], dest_shape[1], ds.count))
+            
+            for i_raster, index in enumerate(ds.indexes):  # Cycle through bands
+                ##################### Band
+                # Reproject band
+                source_band = ds.read(index)
+                source_dtype = ds.dtypes[i_raster]
+
+                dest_band = np.zeros((dest_shape[0], dest_shape[1]))
+
+                reproject(
+                    source_band,
+                    dest_band,
+                    src_transform=source_A,
+                    src_crs=source_crs,
+                    dst_transform=dest_A,
+                    dst_crs=dest_crs,
+                    dst_nodata=0,
+                    resampling=Resampling.nearest
+                )
+                # Assing NaNs to saturated values within source dtype
+                try:
+                    dest_band[dest_band.astype(source_dtype) == np.iinfo(source_dtype).max] = np.nan
+                    dest_band[dest_band.astype(source_dtype) == np.iinfo(source_dtype).min] = np.nan
+                except:
+                    dest_band[dest_band.astype(source_dtype) == np.finfo(source_dtype).max] = np.nan
+                    dest_band[dest_band.astype(source_dtype) == np.finfo(source_dtype).min] = np.nan
+                
+                # Assign band to bands
+                dest_bands[:,:,i_raster] = dest_band
+
+                ##################### Mask
+                # Reproject mask
+                source_band_mask = ds.read_masks(index)
+                dest_band_mask = np.zeros((dest_shape[0], dest_shape[1]))
+            
+                reproject(
+                    source_band_mask,
+                    dest_band_mask,
+                    src_transform=source_A,
+                    src_crs=source_crs,
+                    dst_transform=dest_A,
+                    dst_crs=dest_crs,
+                    dst_nodata=0,
+                    resampling=Resampling.nearest
+                )
+                
+                # Assign NaNs to nodata values of mask
+                dest_band_mask[dest_band_mask == 0] = np.nan  
+                # Check if whole raster is empty
+                isempty = np.sum(np.isnan(dest_band).flatten()) == (dest_shape[0]*dest_shape[1]) 
+                # If raster is not completely empty combine raster with mask
+                if not isempty:
+                    dest_band_mask = dest_band_mask * dest_band
+                # Set data value to 1
+                dest_band_mask[np.isfinite(dest_band_mask)] = 1
+                # Combine to intersection mask, nodata -> NaN, data -> 1
+                dest_mask = dest_mask * dest_band_mask
+
+        # Add bands to list of bands
+        dest_bands_list.append(dest_bands)
     
-    ### Number of RasterBands and dtypes
-    rastercount = ds.RasterCount
-    rasterdtype = [ds.GetRasterBand(i+1).DataType for i in range(rastercount)]
+    # Now go through all reprojected rasters and apply dest_mask
+    dest_bands_list = [dest_bands * dest_mask.reshape((dest_shape[0], dest_shape[1], 1)) for dest_bands in dest_bands_list]
     
-    ### Print some info
-    print('    shape [px]: (%i,%i)'%(shape[0],shape[1]))
-    print('    resolution [m]: (%.3f,%.3f)'%(gt[1],-gt[-1]))
-    print('    number of rasters: %i'%rastercount)
-    
-    return ds, proj, gt, shape, rastercount, rasterdtype
-    
-    
+    return dest_bands_list, dest_mask, dest_A, inter_bound
