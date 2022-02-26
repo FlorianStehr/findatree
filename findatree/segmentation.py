@@ -1,8 +1,17 @@
 import numpy as np
 import cv2 as cv
 
+def blur(img, kernel_size=3, iterations=3):
+    img_blur = img.copy()
 
-def divide_connected_regions(mask):
+    for i in range(iterations):
+        img_blur = cv.medianBlur(img_blur,kernel_size)
+    for i in range(iterations):
+        img_blur = cv.GaussianBlur(img_blur,(kernel_size,kernel_size),0)
+    return img_blur
+
+
+def divide_connected_regions(mask, percentile=25):
     
     # Get connected regions in mask -> isles
     count, isles = cv.connectedComponents(mask.astype(np.uint8))
@@ -32,7 +41,7 @@ def divide_connected_regions(mask):
     
     # Go through isles and create sub-isles
     for idx in isles_midx:
-        crit = np.percentile(new_mask[idx], 25)
+        crit = np.percentile(new_mask[idx], percentile)
         isle_max = np.max(new_mask[idx])
         
         if isle_max > crit:

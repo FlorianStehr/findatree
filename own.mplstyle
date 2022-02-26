@@ -52,6 +52,7 @@ legend.edgecolor: None
 
 ### Images
 image.interpolation: none
+image.resample: False
 
 #### Figure saving
 figure.dpi:150
