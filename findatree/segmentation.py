@@ -1,46 +1,74 @@
+from typing import List
+from typing import Tuple
 import numpy as np
 import cv2 as cv
 
-def blur(img, kernel_size=3, iterations=3):
+def blur(img, iterations=(0,5), kernel_size=3):
     img_blur = img.copy()
 
-    for i in range(iterations):
+    for i in range(iterations[0]):
         img_blur = cv.medianBlur(img_blur,kernel_size)
-    for i in range(iterations):
+    for i in range(iterations[1]):
         img_blur = cv.GaussianBlur(img_blur,(kernel_size,kernel_size),0)
     return img_blur
 
 
-def divide_connected_regions(mask, percentile=25):
+#%%
+def _connectedComponents_idx(mask: np.ndarray) -> List[Tuple[np.ndarray]]:
+    '''
+    Return indices of connectedComponents (see openCV: connectedComponents) in a binary mask.
+
+    Parameters:
+    -----------
+    mask: np.ndarray
+        Binary mask where background -> 0 and foreground -> 1.
     
-    # Get connected regions in mask -> isles
-    count, isles = cv.connectedComponents(mask.astype(np.uint8))
-    isles = isles.flatten() # Flatten
+    Returns:
+    --------
+    List of ``len(connectedComponents)``. Each entry corresponds to np.ndarray containing (co) indices of respective connectedComponent in original mask.
 
-    # Get flat-indices of isles in original mask
-    isles_len = np.unique(isles, return_counts=True)[1]
-    isles_sidx = np.argsort(isles)
+    '''
 
-    isles_midx = []
+    # Get connectedComponents in mask -> ccs: each cc is assigned with unique integer, background with 0
+    count, ccs = cv.connectedComponents(mask.astype(np.uint8))
+    ccs = ccs.flatten() # Flatten
+
+    # Get number of unique counts in ccs plus the sort-index of ccs to reconstruct indices of each cc in mask
+    ccs_len = np.unique(ccs, return_counts=True)[1]
+    ccs_sidx = np.argsort(ccs)
+
+    # Now loop through each cc and get indices in mask
+    ccs_midx = []
     i0 = 0
-    for l in isles_len:
+    for l in ccs_len:
         i1 = i0 + l
-        isle_midx = isles_sidx[i0:i1]
+        cc_midx = ccs_sidx[i0:i1]
         i0 = i1
 
-        isles_midx.append(isle_midx)
+        # Go from flattened index to coordinate index in original mask
+        cc_midx = np.unravel_index(cc_midx, mask.shape) 
+        
+        ccs_midx.append(cc_midx)
 
-    isles_midx = isles_midx[1:] # Remove index belonging to background (value of zero in cv.connectedComponents)
+    ccs_midx = ccs_midx[1:] # Remove index belonging to background (value of zero in cv.connectedComponents)
+
+    return ccs_midx
+
+
+#%%
+def divide_connectedComponents(mask, percentile=25):
+    
+    # Get indices of connectedComponents (ccs) in mask 
+    ccs_idx = _connectedComponents_idx(mask)
 
     # Distance trafo of mask
     dist_trafo = cv.distanceTransform(mask.astype(np.uint8), cv.DIST_L2, 5)
 
     # Initiate new mask
     new_mask = dist_trafo.astype(np.float32)
-    new_mask = new_mask.flatten() # Flatten to use isles_midx
     
-    # Go through isles and create sub-isles
-    for idx in isles_midx:
+    # Go through ccs and create sub-ccs
+    for idx in ccs_idx:
         crit = np.percentile(new_mask[idx], percentile)
         isle_max = np.max(new_mask[idx])
         
@@ -50,4 +78,6 @@ def divide_connected_regions(mask, percentile=25):
     new_mask[new_mask <= 0] = 0
     new_mask[new_mask > 0] = 1
 
-    return new_mask.astype(np.uint8).reshape(mask.shape)
+    new_mask = new_mask.astype(np.uint8) 
+    
+    return new_mask
