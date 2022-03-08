@@ -1,14 +1,10 @@
 from typing import List
 from typing import Tuple
-
 import numpy as np
-
+import importlib
 import rasterio
 from rasterio.warp import reproject, Resampling
-
 import cv2 as cv
-
-import importlib
 
 from findatree import segmentation as segment
 
@@ -226,11 +222,18 @@ def _close_nan_holes(img: np.ndarray, max_pxs: int = 10**2) -> np.ndarray:
 
     for i, cc_idx in enumerate(ccs_idx):
         # Bounding box for cc
+        # Also check if bounding box limits are not outside of image shape
         box_lims = [
-            (np.min(cc_idx[0]) - 1, np.max(cc_idx[0]) + 2),
-            (np.min(cc_idx[1]) - 1, np.max(cc_idx[1]) + 2),
+            (
+                max(np.min(cc_idx[0]) - 1, 0),
+                min(np.max(cc_idx[0]) + 2, img.shape[0]),
+            ),
+            (
+                min(np.min(cc_idx[1]) - 1, 0),
+                max(np.max(cc_idx[1]) + 2, img.shape[1]),
+            ),
         ]
-
+        
         # Create small image of cc in box
         cc_box = mask[box_lims[0][0]:box_lims[0][1], box_lims[1][0]:box_lims[1][1]]
 

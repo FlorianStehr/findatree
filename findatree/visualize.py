@@ -4,6 +4,29 @@ import matplotlib.pyplot as plt
 from typing import List
 
 
+def _image_minmax(img):
+
+    # Get flattened version of image without nans
+    x = img[np.isfinite(img)]
+    # Get unique values
+    x_uni = np.unique(x)
+    
+    if len(x_uni) == 0: # Only one unique value case
+        xmin = x_uni
+        xmax = x_uni
+        return xmin, xmax
+
+    elif 0 < len(x_uni) <= 10: # If less than 10 unique values return minimum, maximum
+        xmin = x_uni[0]
+        xmax = x_uni[-1]
+        return xmin, xmax
+
+    else: # If more than 10 unique values return percentiles
+        xmin = np.percentile(x, 5)
+        xmax = np.percentile(x, 95)
+        return xmin, xmax
+    
+
 def show_channels(
     channels: List[np.ndarray],
     **kwargs,
@@ -22,8 +45,8 @@ def show_channels(
         Number of colums and rows in figure. Defaults to ``[len(channels), 1]``.
     xylim: List[Tuple, Tuple]
         x-y-limits given as ``[(x_center, x_width), (y_center, y_width)]``. Defaults to cover orginal dimensions of channels.
-    boolmask: np.ndarray(shape=(m,n), dtype=np.bool_):
-        Channel indices where ``boolmask == True`` will be set to 0. Must be of shape ``(m,n)``. De
+    mask: np.ndarray(shape=(m,n), dtype=np.bool_):
+        Channel indices where ``mask == False`` will be set to 0. Must be of shape ``(m,n)``. De
     contrasts: List[Tuple, ...]
         List of tuples containing contrast lower and upper threshold for each channel (i.e. ``vmin``, ``vmax`` of matplotlib.pyplot.imshow()).
         Defaults to ``[(np.nanpercentile(c.flatten(), 1), np.nanpercentile(c.flatten(), 99)) for c in channels]`` after mask was applied.
@@ -52,10 +75,10 @@ def show_channels(
     else:
         n_cols_rows = kwargs['n_cols_rows']
     #
-    if 'boolmask' not in kwargs:
-        boolmask = np.zeros(shape, dtype=np.bool_)
+    if 'mask' not in kwargs:
+        mask = np.ones(shape, dtype=np.bool_)
     else:
-        boolmask = kwargs['boolmask'].astype(np.bool_)
+        mask = kwargs['mask'].astype(np.bool_)
     #
     if 'xylim' not in kwargs:
         xylim = [(s // 2, s // 2) for s in shape[::-1]] # (center, width)
@@ -78,18 +101,18 @@ def show_channels(
     cmin = xylim[0][0] - xylim[0][1]
     cmax = xylim[0][0] + xylim[0][1]
     channels = [c[rmin:rmax, cmin:cmax] for c in channels]
-    boolmask = boolmask[rmin:rmax, cmin:cmax]
+    mask = mask[rmin:rmax, cmin:cmax]
 
     # Apply mask
     channels_mask = []
     for c in channels:
         c_mask = c.copy().astype(np.float32)
-        c_mask[boolmask] = np.nan
+        c_mask[np.invert(mask)] = np.nan
         channels_mask.append(c_mask)
 
     # Now get default contrast values
     if 'contrasts' not in kwargs:
-        contrasts = [(np.nanpercentile(c.flatten(), 1), np.nanpercentile(c.flatten(), 99)) for c in channels]
+        contrasts = [_image_minmax(c_mask) for c_mask in channels_mask]
     else:
         contrasts = kwargs['contrasts']
 
@@ -102,14 +125,13 @@ def show_channels(
         figsize=(n_cols_rows[0] * 3 * zoom, n_cols_rows[1] * 3 * zoom),
         tight_layout=True,
         )
-    f.subplots_adjust(bottom=0.05, top=0.95, left=0, right=1, hspace=0, wspace=0)
+    f.subplots_adjust(bottom=0.05, top=0.95, left=0, right=1, hspace=0.15, wspace=0)
 
     for i, ax in enumerate(axs.flatten()):
         if i < len(channels):
 
             if contrasts[i] is None:
-                vmin = np.nanpercentile(channels_mask[i].flatten(), 1)
-                vmax = np.nanpercentile(channels_mask[i].flatten(), 99)
+                vmin, vmax = _image_minmax(channels_mask[i])
             else:
                 vmin = contrasts[i][0]
                 vmax = contrasts[i][1]
