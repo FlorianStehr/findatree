@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 from typing import List
 
 
-def _image_minmax(img):
+def _image_minmax(img, lower_perc: int=5, upper_perc: int=95):
 
     # Get flattened version of image without nans
     x = img[np.isfinite(img)]
@@ -22,8 +22,8 @@ def _image_minmax(img):
         return xmin, xmax
 
     else: # If more than 10 unique values return percentiles
-        xmin = np.percentile(x, 5)
-        xmax = np.percentile(x, 95)
+        xmin = np.percentile(x, lower_perc)
+        xmax = np.percentile(x, upper_perc)
         return xmin, xmax
     
 
@@ -50,10 +50,12 @@ def show_channels(
     contrasts: List[Tuple, ...]
         List of tuples containing contrast lower and upper threshold for each channel (i.e. ``vmin``, ``vmax`` of matplotlib.pyplot.imshow()).
         Defaults to ``[(np.nanpercentile(c.flatten(), 1), np.nanpercentile(c.flatten(), 99)) for c in channels]`` after mask was applied.
-    channel_names: List[str]
+    channel_names: List[str, ...]
         List of channel names to be shwon as title of each axis in figure.
     zoom: float
         By default single ax will be of size ``(3,3)`` [inches]. Zoom scales this factor to ``(3 * zoom, 3 * zoom)``.
+    use_random_cmap: List[bool, ...]
+        Use random colormap for channel. Defaults to ``False`` for each channel and then matplotlib cmap ``magma`` is used. If random colormap is used input image will be transformed by ``img % 256``.
 
 
 
@@ -89,6 +91,11 @@ def show_channels(
         channel_names = [None for i in range(len(channels))]
     else:
         channel_names = kwargs['channel_names']
+    #
+    if 'use_random_cmap' not in kwargs:
+        use_random_cmap = [False for i in range(len(channels))]
+    else:
+        use_random_cmap = kwargs['use_random_cmap']
     #
     if 'zoom' not in kwargs:
         zoom = 1
@@ -127,20 +134,34 @@ def show_channels(
         )
     f.subplots_adjust(bottom=0.05, top=0.95, left=0, right=1, hspace=0.15, wspace=0)
 
+    # Define random cmap
+    vals = np.linspace(0.05,1,256)
+    np.random.shuffle(vals)
+    vals[0] = 0
+    cmap_random = plt.cm.colors.ListedColormap(plt.cm.nipy_spectral(vals))
+    cmap = 'magma'
+
     for i, ax in enumerate(axs.flatten()):
         if i < len(channels):
+            img = channels_mask[i].astype(np.float32)
 
             if contrasts[i] is None:
-                vmin, vmax = _image_minmax(channels_mask[i])
+                vmin, vmax = _image_minmax(img)
             else:
                 vmin = contrasts[i][0]
                 vmax = contrasts[i][1]
 
+            if use_random_cmap[i]:
+                cmap = cmap_random
+                img[img > 0] = img[img > 0] % 256 + img[img > 0] // 256
+                img[img > 256] = 100
+                vmin, vmax = _image_minmax(img,0,100)
+
             mapp = ax.imshow(
-                channels_mask[i],
+                img,
                 vmin=vmin,
                 vmax=vmax,
-                cmap='magma',
+                cmap=cmap,
             )
             
             ax.set_xticks(np.arange(0, cmax - cmin, 200))
