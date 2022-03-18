@@ -18,13 +18,13 @@ def blur(img, iterations=3, kernel_size=5):
 
 
 #%%
-def _connectedComponents_idx(mask: np.ndarray) -> List[Tuple[np.ndarray]]:
+def _connectedComponents_idx(mask_in: np.ndarray) -> List[Tuple[np.ndarray]]:
     '''
     Return indices of connectedComponents (see openCV: connectedComponents) in a binary mask.
 
     Parameters:
     -----------
-    mask: np.ndarray
+    mask_in: np.ndarray
         Binary mask where background -> 0 and foreground -> 1.
     
     Returns:
@@ -34,7 +34,9 @@ def _connectedComponents_idx(mask: np.ndarray) -> List[Tuple[np.ndarray]]:
     '''
 
     # Get connectedComponents in mask -> ccs: each cc is assigned with unique integer, background with 0
-    count, ccs = cv.connectedComponents(mask.astype(np.uint8))
+    mask = mask_in.copy()
+    mask = mask.astype(np.uint8)
+    count, ccs = cv.connectedComponents(mask)
     ccs = ccs.flatten() # Flatten
 
     # Get number of unique counts in ccs plus the sort-index of ccs to reconstruct indices of each cc in mask
@@ -222,7 +224,7 @@ def seeds_by_gradient(channels: List[np.ndarray,], mask: np.ndarray):
     edge_sum = cv.erode(edge_sum, kernel, iterations=1)
 
     # Combined maximum gradient image
-    grad_max = np.mean(grad, axis=-1)
+    grad_max = np.max(grad, axis=-1)
 
     # Seed for marker generation by shrinking
     seed = mask.astype(np.uint8)
@@ -246,6 +248,7 @@ def seeds_by_gradient(channels: List[np.ndarray,], mask: np.ndarray):
     markers = markers + 1
     markers[markers == 1] = 0 # Now all outside markers -> 0, markers -> >=2
     marker_combo = marker_combo + markers
+    # marker_combo[edge_sum == 1] = 1
 
     # Prepare grad_max as image for watershed
     grad_max_int8 = grad_max.copy()
@@ -258,9 +261,11 @@ def seeds_by_gradient(channels: List[np.ndarray,], mask: np.ndarray):
         img[:,:,i] = grad_max_int8
 
     # Watershed
-    ws_out = cv.watershed(img, marker_combo)
+    ws_out = cv.watershed(img, marker_combo.copy())
 
-    return grad_max, edge_sum, ws_out
+    marker_combo[edge_sum == 1] = 1
+    
+    return grad_max, edge_sum, marker_combo, ws_out
     
     
     

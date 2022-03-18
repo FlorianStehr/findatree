@@ -6,9 +6,9 @@ import rasterio
 from rasterio.warp import reproject, Resampling
 import cv2 as cv
 
-from findatree import segmentation as segment
+from findatree import segmentation2 as segment2
 
-importlib.reload(segment)
+importlib.reload(segment2)
 
 #%%
 def print_raster_info(paths: List[str]) -> None:
@@ -182,7 +182,7 @@ def reproject_all_intersect(paths: List[str], res: float) -> Tuple:
 
 #%%
 
-def _close_nan_holes(img: np.ndarray, max_pxs: int = 10**2) -> np.ndarray:
+def _close_nan_holes(img: np.ndarray, max_pxs: int = 200) -> np.ndarray:
     '''
     Close small NaN holes in image with medium value of surroundings.
 
@@ -212,7 +212,7 @@ def _close_nan_holes(img: np.ndarray, max_pxs: int = 10**2) -> np.ndarray:
     mask[np.isnan(img)] = 1
 
     # Get indices of connectedComponents (ccs)
-    ccs_idx = segment._connectedComponents_idx(mask)
+    ccs_idx = segment2.connectedComponents_idx(mask)
 
     # Remove all ccs with len(cc) > max_pxs
     ccs_idx = [cc_idx for cc_idx in ccs_idx if len(cc_idx[0]) <= max_pxs]
@@ -256,3 +256,49 @@ def _close_nan_holes(img: np.ndarray, max_pxs: int = 10**2) -> np.ndarray:
         mask[cc_ring_idx] = 2
 
     return img_closed, mask
+
+#%%
+
+def define_channels(channels_in, reduce=0):
+    '''
+    Normalize channels, convert to ``numpy.float32`` dtype and optionally reduce by using gaussian image pyramids
+    '''
+    channels = {}
+    shape = channels_in[list(channels_in.keys())[0]].shape[:2]
+
+    # Normalize primary channels and convert to float32 dtype
+    channels['blue'] = (channels_in['blue'] / (2**16 - 1)).astype(np.float32)
+    channels['blue'] = (channels_in['blue'] / (2**16 - 1)).astype(np.float32)
+    channels['red'] = (channels_in['red'] / (2**16 - 1)).astype(np.float32)
+    channels['green'] = (channels_in['green'] / (2**16 - 1)).astype(np.float32)
+    channels['re'] = (channels_in['re'] / (2**16 - 1)).astype(np.float32)
+    channels['nir'] = (channels_in['nir'] / (2**16 - 1)).astype(np.float32)
+
+    # Secondary channels
+    channels['chm'] = (channels_in['dsm'] - channels_in['dtm']).astype(np.float32)
+    channels['ndvi'] = (channels['nir'] - channels['red']) / (channels['nir'] + channels['red'])
+    
+    # RGB
+    rgb = np.zeros((shape[0], shape[1], 3), dtype=np.float32)
+    rgb[:,:,0] = channels['blue']
+    rgb[:,:,1] = channels['green']
+    rgb[:,:,2] = channels['red']
+    channels['rgb'] = np.prod(rgb, axis=2)**(1/3)
+
+    # HLS
+    hls = cv.cvtColor(rgb, cv.COLOR_RGB2HLS)
+    channels['h'] = hls[:,:,0]
+    channels['l'] = hls[:,:,1]
+    channels['s'] = hls[:,:,2]
+
+    if reduce == 0:
+        return channels
+    
+    else:
+        for key in channels:
+            img = channels[key].copy()
+            for i in range(reduce):
+                img = cv.pyrDown(img)
+            channels[key] = img
+        
+        return channels
