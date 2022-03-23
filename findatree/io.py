@@ -291,6 +291,7 @@ def define_channels(channels_in, reduce=0):
     channels['l'] = hls[:,:,1]
     channels['s'] = hls[:,:,2]
 
+    # Optional resolution reduction by gaussian image pyramid
     if reduce == 0:
         return channels
     

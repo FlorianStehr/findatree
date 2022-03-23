@@ -6,7 +6,7 @@ import skimage
 import numba
 
 #%%
-def scaler_minmax_uint8(img_in, mask=None):
+def scaler_percentile(img_in, percentile=0, mask=None, return_dtype='uint8'):
     
     # Copy input image
     img = img_in.copy()
@@ -15,22 +15,33 @@ def scaler_minmax_uint8(img_in, mask=None):
     if mask is None:
         mask = np.ones(img.shape, dtype=np.bool_)
 
-    # Min/Max scaling
-    img -= np.nanmin(img[mask])
-    img *= 255 / np.nanmax(img[mask])
+    # Percentile scaling
+    thresh_lower = max(np.nanpercentile(img[mask], percentile), 0)
+    thresh_upper = np.nanpercentile(img[mask], 100 - percentile)
+    img -= thresh_lower
+    img /= (thresh_upper - thresh_lower)
+    img[img < 0] = 0
+    img[img > 1] = 1
     
     # dtype conversion
-    img = img.astype(np.uint8)
-    img[np.invert(mask)] = 0
+    if return_dtype == 'uint8': 
+        img = img * 255
+        img = img.astype(np.uint8)
+        img[np.invert(mask)] = 0
 
-    return img
+    return img, (thresh_lower, thresh_upper)
 
 
 #%%
 def local_thresholding(img_in, mask_global, distance):
 
     # MinMax scaling and conversion to uint8 image
-    img = scaler_minmax_uint8(img_in, mask_global)
+    img, thresh = scaler_percentile(
+        img_in,
+        percentile=0,
+        mask=mask_global,
+        return_dtype='uint8',
+    )
     
     # Kernel size
     distance = int(np.round(distance))
@@ -48,15 +59,49 @@ def local_thresholding(img_in, mask_global, distance):
         0,                              # Constat substracted from the (weighted) mean prior to thresholding
     )
 
-    # Morphological trafos
-    kernel = np.ones((3,3), dtype=np.uint8)
-    # mask_local = cv.erode(mask_local, kernel)
-    # mask_local = cv.dilate(mask_local, kernel)
-    # mask_local = cv.dilate(mask_local, kernel)
-    # mask_local = cv.erode(mask_local, kernel)
-    
-
     return mask_local
+
+
+#%%
+def normalize_channels(channels_in, res_xy, res_z, mask=None, percentile=0):
+    
+    # Init
+    channels = {}
+    shape = channels_in[list(channels_in.keys())[0]].shape[:2]
+
+    # Define mask if not set
+    if mask is None:
+        mask = np.ones(shape, dtype=np.bool_)
+    # Convert mask to bool dtype
+    mask = mask.astype(np.bool_)
+
+    # Prepare x-y coordinates
+    x = np.arange(0,shape[1],1,dtype=np.float32) * res_xy
+    y = np.arange(0,shape[0],1,dtype=np.float32) * res_xy
+    xx, yy = np.meshgrid(x,y)
+
+    # Prepare z-coordinate
+    z = channels_in['chm'].copy() * res_z
+
+    # Add x-y-z-coordinates
+    channels['x'] = xx 
+    channels['y'] = yy 
+    channels['z'] = z
+
+    # Normalize color channels
+    for key in channels_in:
+        if key != 'chm':
+            img, thresh = scaler_percentile(
+                channels_in[key],
+                percentile=percentile,
+                mask=mask,
+                return_dtype=None,
+            )
+            channels[key] = img
+            print(f"Channel: '{key}' from {thresh[0]:.1e} to {thresh[1]:.1e} mapped to [0,1]")
+
+
+    return channels
 
 
 #%%
@@ -79,6 +124,7 @@ def connectedComponents_idx(mask_in: np.ndarray) -> List[Tuple[np.ndarray]]:
     mask = mask_in.copy()
     mask = mask.astype(np.uint8)
     ccs = skimage.measure.label(mask, background=0, return_num=False, connectivity=1)
+
     # count, ccs = cv.connectedComponents(mask)
     ccs = ccs.flatten() # Flatten
 

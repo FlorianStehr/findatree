@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 from typing import List
 
 
-def _image_minmax(img, lower_perc: int=5, upper_perc: int=95):
+def _image_minmax(img, lower_perc: int=0, upper_perc: int=100):
 
     # Get flattened version of image without nans
     x = img[np.isfinite(img)]
@@ -83,7 +83,7 @@ def show_channels(
         mask = kwargs['mask'].astype(np.bool_)
     #
     if 'xylim' not in kwargs:
-        xylim = [(s // 2, s // 2) for s in shape[::-1]] # (center, width)
+        xylim = [(s // 2 + 1, s // 2 + 1) for s in shape[::-1]] # (center, width)
     else:
         xylim = kwargs['xylim']
     #
@@ -163,11 +163,16 @@ def show_channels(
                 vmax=vmax,
                 cmap=cmap,
             )
+
+            tick = 10 ** np.floor(np.log10(cmax - cmin))
+            if ((cmax - cmin) / tick >= 1) & ((cmax - cmin) / tick <= 2):
+                tick = (tick / 10) * 2.5
+            ax.set_xticks(np.arange(0, cmax - cmin, tick))
             
-            ax.set_xticks(np.arange(0, cmax - cmin, 200))
-            ax.set_xticklabels(np.arange(cmin / 100, cmax / 100, 2, dtype=np.uint8))
-            ax.set_yticks(np.arange(0, rmax - rmin, 200))
-            ax.set_yticklabels(np.arange(rmin / 100, rmax / 100, 2, dtype=np.uint8))
+            tick = 10 ** np.floor(np.log10(rmax - rmin))
+            if ((rmax - rmin) / tick >= 1) & ((rmax - rmin) / tick <= 2):
+                tick = (tick / 10) * 2.5
+            ax.set_yticks(np.arange(0, rmax - rmin, tick))
 
             if (len(channel_names) == len(channels)):
                 ax.set_title(f"{channel_names[i]} [{vmin:.0e} - {vmax:.0e}]")
