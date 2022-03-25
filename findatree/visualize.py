@@ -2,9 +2,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from typing import List
+from typing import Tuple
 
 
-def _image_minmax(img, lower_perc: int=0, upper_perc: int=100):
+def _image_minmax(img, percentile: float=5) -> Tuple[float, float]:
 
     # Get flattened version of image without nans
     x = img[np.isfinite(img)]
@@ -22,8 +23,8 @@ def _image_minmax(img, lower_perc: int=0, upper_perc: int=100):
         return xmin, xmax
 
     else: # If more than 10 unique values return percentiles
-        xmin = np.percentile(x, lower_perc)
-        xmax = np.percentile(x, upper_perc)
+        xmin = np.percentile(x, percentile)
+        xmax = np.percentile(x, 100 - percentile)
         return xmin, xmax
     
 
@@ -139,7 +140,6 @@ def show_channels(
     np.random.shuffle(vals)
     vals[0] = 0
     cmap_random = plt.cm.colors.ListedColormap(plt.cm.nipy_spectral(vals))
-    cmap = 'magma'
 
     for i, ax in enumerate(axs.flatten()):
         if i < len(channels):
@@ -155,7 +155,9 @@ def show_channels(
                 cmap = cmap_random
                 img[img > 0] = img[img > 0] % 256 + img[img > 0] // 256
                 img[img > 256] = 100
-                vmin, vmax = _image_minmax(img,0,100)
+                vmin, vmax = _image_minmax(img,0)
+            else:
+                cmap = 'magma'
 
             mapp = ax.imshow(
                 img,
