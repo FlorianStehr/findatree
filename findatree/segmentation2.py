@@ -8,6 +8,7 @@ from scipy.spatial import distance_matrix
 from scipy.ndimage.morphology import distance_transform_edt as distance_transform
 
 import skimage.measure as measure
+import skimage.filters as filters
 import skimage.morphology as morph
 import skimage.segmentation as segmentation
 
@@ -40,30 +41,23 @@ def scaler_percentile(img_in, percentile=0, mask=None, return_dtype='uint8'):
 
 #%%
 def local_thresholding(img_in, mask_global, distance):
+    # Set everything outside global mask to 0
+    img = img_in.copy()
+    img[np.invert(mask_global)] = 0
 
-    # MinMax scaling and conversion to uint8 image
-    img, thresh = scaler_percentile(
-        img_in,
-        percentile=0,
-        mask=mask_global,
-        return_dtype='uint8',
-    )
-    
     # Kernel size
     distance = int(np.round(distance))
     if distance % 2 == 0:
         distance +=1 
     print(f"Distance set to: {distance} [px]")
 
-    # Gaussian adaptive thresholding
-    mask_local = cv.adaptiveThreshold(
-        img,                            # Source image 
-        1,                              # Value assigned to pxs where condition is satisfied
-        cv.ADAPTIVE_THRESH_GAUSSIAN_C,  # Adaptive thresholding method
-        cv.THRESH_BINARY,               # Thresholding type     
-        distance,                       # Size of pixel neighborhood to calculate threshold
-        0,                              # Constat substracted from the (weighted) mean prior to thresholding
+    # Local thresholding
+    thresh = filters.threshold_local(
+        img,
+        block_size=distance,
+        method='gaussian',
     )
+    mask_local = (img > thresh).astype(np.uint8)
 
     return mask_local
 
@@ -83,7 +77,7 @@ def shrinkmask_expandlabels(mask_in, thresh_dist=2, verbose=False):
     # Remove small holes
     mask = morph.remove_small_holes(
         mask.astype(np.bool_),
-        area_threshold=4,
+        area_threshold=2,
         connectivity=1,
     )
 
@@ -102,10 +96,11 @@ def shrinkmask_expandlabels(mask_in, thresh_dist=2, verbose=False):
     mask_shrink = dist.copy()
     mask_shrink[dist < thresh_dist] = 0
     mask_shrink[dist >= thresh_dist] = 1
+    mask_shrink = mask_shrink.astype(np.uint8)
     
     # Expand labels by thresh_dist and compute overlap with mask
     labels = measure.label(mask_shrink, background=0, return_num=False, connectivity=2)
-    labels = segmentation.expand_labels(labels,distance=thresh_dist * np.sqrt(2))
+    labels = segmentation.expand_labels(labels,distance=thresh_dist * 1.2)
     labels = labels * mask
 
     # Remove very small labeled objects
@@ -132,12 +127,12 @@ def shrinkmask_expandlabels(mask_in, thresh_dist=2, verbose=False):
 
 #%%
 
-def shrinkmask_expandlabels_iter(mask_in, thresh_dist_init, thresh_dist_lower=1, final_expansion=np.sqrt(2), verbose=False):
+def shrinkmask_expandlabels_iter(mask_in, thresh_dist_start, thresh_dist_stop=1, verbose=False):
     
     # Define initial values
     shape = mask_in.shape
     mask_remain = mask_in.copy()
-    thresh_dist = thresh_dist_init
+    thresh_dist = thresh_dist_start
     thresh_area = np.ceil(thresh_dist**2 / 2)
 
     labels_masks_it= []
@@ -145,16 +140,16 @@ def shrinkmask_expandlabels_iter(mask_in, thresh_dist_init, thresh_dist_lower=1,
     labels_final = np.zeros(shape, dtype=np.uint32)
     mask_seed = np.zeros(shape, dtype=np.uint8)
 
-    while thresh_dist > thresh_dist_lower:
+    while thresh_dist > thresh_dist_stop:
         # Shrink mask & expand labels
         labels_masks, threshs = shrinkmask_expandlabels(mask_remain, thresh_dist=thresh_dist, verbose=verbose)
         
         # Assign iteration results to lists
-        labels_masks_it.extend(labels_masks)
-        threshs_it.extend(threshs)
+        labels_masks_it.append(labels_masks)
+        threshs_it.append(threshs)
 
         # Assign values for next iteration
-        thresh_dist = thresh_dist / np.sqrt(2)
+        thresh_dist = thresh_dist - 1
         mask_remain = labels_masks[1]
 
         # Add up labels
@@ -162,13 +157,23 @@ def shrinkmask_expandlabels_iter(mask_in, thresh_dist_init, thresh_dist_lower=1,
         labels[labels > 0] = labels[labels > 0] + np.max(labels_final.flatten())
         labels_final = labels_final + labels
 
-        # Add up mask & mask_shrink -> mask_seed
-        mask = labels_masks[2]
-        mask_shrink = labels_masks[3] 
-        mask_seed = mask_seed + (mask - mask_remain) + mask_shrink
+        # Add current seeds
+        mask_seed += labels_masks[3]
     
-    # Expand final labels 
-    labels_final = segmentation.expand_labels(labels_final,distance=final_expansion)
+
+    # Define return mask and mask_seed
+    mask = labels_masks_it[0][2] # Initial mask with small holes and objects removed
+    mask_seed = mask_seed + mask
+
+    # Expand final labels quite a bit (possible due to next step of restriction to inital dilated mask)
+    labels_final = segmentation.expand_labels(labels_final,distance=3)
+    
+    # Resrict expanded labels to dilated original mask
+    mask_dilated = morph.dilation(
+        mask,
+        footprint=morph.disk(1),
+    ).astype(np.uint8)
+    labels_final[mask_dilated == 0] = 0
 
     # Boundaries
     bounds = segmentation.find_boundaries(
@@ -178,50 +183,8 @@ def shrinkmask_expandlabels_iter(mask_in, thresh_dist_init, thresh_dist_lower=1,
     ).astype(np.uint8)
     bounds = morph.thin(bounds)
 
-    return labels_final, bounds, mask_seed, labels_masks_it
+    return labels_final, bounds, mask_seed
 
-
-#%%
-def normalize_channels(channels_in, res_xy, res_z, mask=None, percentile=0):
-    
-    # Init
-    channels = {}
-    shape = channels_in[list(channels_in.keys())[0]].shape[:2]
-
-    # Define mask if not set
-    if mask is None:
-        mask = np.ones(shape, dtype=np.bool_)
-    # Convert mask to bool dtype
-    mask = mask.astype(np.bool_)
-
-    # Prepare x-y coordinates
-    x = np.arange(0,shape[1],1,dtype=np.float32) * res_xy
-    y = np.arange(0,shape[0],1,dtype=np.float32) * res_xy
-    xx, yy = np.meshgrid(x,y)
-
-    # Prepare z-coordinate
-    z = channels_in['chm'].copy() * res_z
-
-    # Add x-y-z-coordinates
-    channels['x'] = xx 
-    channels['y'] = yy 
-    channels['z'] = z
-
-    # Normalize color channels
-    for key in channels_in:
-        if key != 'chm':
-            img, thresh = scaler_percentile(
-                channels_in[key],
-                percentile=percentile,
-                mask=mask,
-                return_dtype=None,
-            )
-            # img = channels_in[key]
-            channels[key] = img
-            print(f"Channel: '{key}' from {thresh[0]:.1e} to {thresh[1]:.1e} mapped to [0,1]")
-
-
-    return channels
 
 
 #%%
