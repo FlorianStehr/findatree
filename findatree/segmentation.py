@@ -4,269 +4,222 @@ import numpy as np
 import cv2 as cv
 import numba
 
-#%%
-def blur(img, iterations=3, kernel_size=5):
-   
-    img_blur = img.copy()
-    for i in range(iterations):
-        img_blur = cv.medianBlur(img_blur, kernel_size)
+from scipy.spatial import distance_matrix
+from scipy.ndimage.morphology import distance_transform_edt as distance_transform
 
-    for i in range(iterations):
-        img_blur = cv.GaussianBlur(img_blur, (kernel_size, kernel_size), 0)
-
-    return img_blur
-
+import skimage.measure as measure
+import skimage.transform as transform
+import skimage.filters as filters
+import skimage.morphology as morph
+import skimage.segmentation as segmentation
 
 #%%
-def _connectedComponents_idx(mask_in: np.ndarray) -> List[Tuple[np.ndarray]]:
+def scaler_percentile(img_in, percentile=0, mask=None, return_dtype='uint8'):
     '''
-    Return indices of connectedComponents (see openCV: connectedComponents) in a binary mask.
-
-    Parameters:
-    -----------
-    mask_in: np.ndarray
-        Binary mask where background -> 0 and foreground -> 1.
-    
-    Returns:
-    --------
-    List of ``len(connectedComponents)``. Each entry corresponds to ``Tuple[np.ndarray,np.ndarray]`` containing (coordinate) indices of respective connectedComponent in original mask.
-
+    Rescale image to interval ``[0,1]`` based on percentile ``(p_lower = percentile, p_upper = 100 - percentile)``
     '''
 
-    # Get connectedComponents in mask -> ccs: each cc is assigned with unique integer, background with 0
-    mask = mask_in.copy()
-    mask = mask.astype(np.uint8)
-    count, ccs = cv.connectedComponents(mask)
-    ccs = ccs.flatten() # Flatten
-
-    # Get number of unique counts in ccs plus the sort-index of ccs to reconstruct indices of each cc in mask
-    ccs_len = np.unique(ccs, return_counts=True)[1]
-    ccs_sidx = np.argsort(ccs)
-
-    # Now loop through each cc and get indices in mask
-    ccs_midx = []
-    i0 = 0
-    for l in ccs_len:
-        i1 = i0 + l
-        cc_midx = ccs_sidx[i0:i1]
-        i0 = i1
-
-        # Go from flattened index to coordinate index in original mask
-        cc_midx = np.unravel_index(cc_midx, mask.shape) 
-        
-        ccs_midx.append(cc_midx)
-
-    ccs_midx = ccs_midx[1:] # Remove index belonging to background (value of zero in cv.connectedComponents)
-
-    return ccs_midx
-
-
-#%%
-def _gradient(img) -> Tuple[np.ndarray, np.ndarray]:
-    '''
-    Returns image gradient magnitude and direction.
-    '''
-    shape = img.shape
-    img = img.astype(np.float32) 
-    
-    sobelx = cv.Sobel(img,cv.CV_32F,1,0,ksize=-1)
-    sobely = cv.Sobel(img,cv.CV_32F,0,1,ksize=-1) 
-
-    # grad_mag = np.hypot(sobelx, sobely) / 32          # Divide by the sum  of the Scharr weights to get closer to the real gradient magnitude
-    grad_mag = (np.abs(sobelx) + np.abs(sobely)) / 32   # Divide by the sum  of the Scharr weights to get closer to the real gradient magnitude
-
-    grad_dir = np.arctan2(sobely, sobelx)
-    grad_dir = np.rad2deg(grad_dir)
-    grad_dir += 180
-
-    return grad_mag, grad_dir
-
-
-#%%
-
-@numba.jit(nopython=True, nogil=True, cache=False)
-def _non_max_suppression(grad_mag: np.ndarray, grad_dir: np.ndarray) -> np.ndarray:
-    shape = grad_mag.shape
-    
-    output = np.zeros(shape, dtype=grad_mag.dtype)
-    
-    for row in range(1, shape[0] - 1):
-        for col in range(1, shape[1] - 1):
-            direction = grad_dir[row, col]
- 
-            if (315 < direction) or (direction <= 45) or (135 < direction <= 225): 
-                before_pixel = grad_mag[row, col - 1]
-                after_pixel = grad_mag[row, col + 1]
-            
-            elif (45 < direction <= 135) or (225 < direction <= 315):
-                before_pixel = grad_mag[row - 1, col]
-                after_pixel = grad_mag[row + 1, col]
- 
-            if grad_mag[row, col] >= before_pixel and grad_mag[row, col] >= after_pixel:
-                output[row, col] = grad_mag[row, col]
- 
-    return output
-
-#%%
-def _hysteresis(img, thresh_lower, thresh_upper, thresh_len):
-    
-    # Prepare mask
-    mask = img.copy()
-    mask[mask < thresh_lower] = 0 # Remove lower threshold values
-    mask[mask > 0] = 1
-    mask = mask.astype(np.uint8)
-
-    # Get indices of connectedComponents (ccs) in mask 
-    ccs_idx = _connectedComponents_idx(mask)
-    
-    # Loop through connectedComponents and keep those that fullfill upper threshold condition
-    new_mask=  np.zeros(img.shape, dtype=np.uint8)
-    for i, idx in enumerate(ccs_idx):
-        cond1 = len(idx[0]) >= thresh_len                   # Defintion for length condition
-        cond2 = np.sum(img[idx] > thresh_upper) >= 2        # Defintion for upper threshold condition
-        cond = cond1 & cond2
-        if cond:
-            new_mask[idx] = 1
-
-    return new_mask
-
-
-
-#%%
-def _canny_edge(img_in: np.ndarray, mask: np.ndarray, kernel: int=3):
-    
+    # Copy input image
     img = img_in.copy()
+
+    # Define mask if not set
+    if mask is None:
+        mask = np.ones(img.shape, dtype=np.bool_)
+
+    # Percentile scaling
+    thresh_lower = max(np.nanpercentile(img[mask], percentile), 0)
+    thresh_upper = np.nanpercentile(img[mask], 100 - percentile)
+    img -= thresh_lower
+    img /= (thresh_upper - thresh_lower)
+    img[img < 0] = 0
+    img[img > 1] = 1
     
-    # Blur image
-    if kernel > 0:
-        for i in range(10):
-            img = cv.medianBlur(img, kernel)
-            img = cv.GaussianBlur(img, (kernel, kernel), 0)
+    # dtype conversion
+    if return_dtype == 'uint8': 
+        img = img * 255
+        img = img.astype(np.uint8)
+        img[np.invert(mask)] = 0
 
-    # Compute gradient magitude and direction
-    grad_mag, grad_dir = _gradient(img)
-
-    # Normalize gradient to median value of iamge within mask
-    grad_mag_scaler = np.nanpercentile(img[mask], 95) - np.nanpercentile(img[mask], 5)
-    grad_mag = grad_mag / grad_mag_scaler
-
-    # Set all gradient magnitudes outside of mask to zero
-    grad_mag[np.invert(mask)] = 0
-
-    # Thining based on non-max suppression
-    edge = _non_max_suppression(grad_mag, grad_dir)
-
-    # Get maximum of egde-gradient-magnitude distribution (used later for determining hyteresis thresholds!)
-    edge_vals = edge[mask]
-    edge_vals = edge_vals[edge_vals > 0]
-    vals, bins = np.histogram(edge_vals, bins=np.linspace(0, 0.5, 100))
-    thresh = bins[np.argmax(vals)]
-
-    # Hysteresis
-    thresh_min = np.percentile(edge[edge > thresh], 0)
-    thresh_max = np.percentile(edge[edge > thresh], 50)
-    thresh_len = 10
-    edge = _hysteresis(edge, thresh_min, thresh_max, thresh_len)
-
-    return img, grad_mag, edge
+    return img, (thresh_lower, thresh_upper)
 
 
 #%%
-def divide_connectedComponents(mask, percentile=25):
-    
-    # Get indices of connectedComponents (ccs) in mask 
-    ccs_idx = _connectedComponents_idx(mask)
+def local_thresholding(img_in, mask_global, distance):
+    '''
+    Local gaussian thresholding of image.
+    '''
 
-    # Distance trafo of mask
-    dist_trafo = cv.distanceTransform(mask.astype(np.uint8), cv.DIST_L2, 5)
+    # Set everything outside global mask to 0
+    img = img_in.copy()
+    img[np.invert(mask_global)] = 0
 
-    # Initiate new mask
-    new_mask = dist_trafo.astype(np.float32)
+    # Kernel size
+    distance = int(np.round(distance))
+    if distance % 2 == 0:
+        distance +=1 
+    print(f"Distance set to: {distance} [px]")
+
+    # Local thresholding
+    thresh = filters.threshold_local(
+        img,
+        block_size=distance,
+        method='gaussian',
+    )
+    mask_local = (img > thresh).astype(np.uint8)
+
+    return mask_local
+
+
+#%%
+def shrinkmask_expandlabels(mask_in, thresh_dist=2, verbose=False):
+    '''
+    Shrink local mask by distance threshold and then re-expand resulting labels by approx. the same distance.
+    Return labels and remainder mask between labels and orginal local mask for next iteration 
+    '''
+
+    mask = mask_in.copy()
+
+    # Set area threshold for removing small objects/holes
+    thresh_area = max(np.ceil(thresh_dist**2 / 2), 1)
+    if verbose:
+        print()
+        print(f"Distance threshold: {thresh_dist:.1f} px")
+        print(f"Area threshold:     {thresh_area:.0f}  px")
+
+    # Remove small holes
+    mask = morph.remove_small_holes(
+        mask.astype(np.bool_),
+        area_threshold=2,
+        connectivity=1,
+    )
+
+    # Remove small objects
+    mask = morph.remove_small_objects(
+        mask,
+        min_size=4,
+        connectivity=1,
+    )
+    mask = mask.astype(np.uint8)
+
+    # Distance transform
+    dist = distance_transform(mask)
+
+    # Threshold distance transform by thresh_dist -> mask_shrink
+    mask_shrink = dist.copy()
+    mask_shrink[dist < thresh_dist] = 0
+    mask_shrink[dist >= thresh_dist] = 1
+    mask_shrink = mask_shrink.astype(np.uint8)
     
-    # Go through ccs and create sub-ccs
-    for idx in ccs_idx:
-        crit = np.percentile(new_mask[idx], percentile)
-        isle_max = np.max(new_mask[idx])
+    # Expand labels by thresh_dist and compute overlap with mask
+    labels = measure.label(mask_shrink, background=0, return_num=False, connectivity=2)
+    labels = segmentation.expand_labels(labels,distance=thresh_dist * 1.2)
+    labels = labels * mask
+
+    # Remove very small labeled objects
+    mask_labels_large = labels.copy()
+    mask_labels_large[labels > 0] = 1
+    mask_labels_large[labels == 0] = 0
+    mask_labels_large = morph.remove_small_objects(
+        mask_labels_large.astype(np.bool_),
+        min_size=thresh_area,
+        connectivity=1,
+    )
+    mask_labels_large = mask_labels_large.astype(np.uint8)
+    labels = labels * mask_labels_large
+    
+    # Now create remainder mask, i.e. objects that have not been labeled
+    mask_remain = mask.copy()
+    mask_remain[labels > 0 ] = 0
+
+    # Define return values
+    labels_masks = [labels, mask_remain, mask, mask_shrink]
+    threshs = [thresh_dist, thresh_area]
+
+    return labels_masks, threshs
+
+#%%
+
+def shrinkmask_expandlabels_iter(mask_in, thresh_dist_start, thresh_dist_stop=1, verbose=False):
+    '''
+    Iterative shrinking of local mask and expansion of remaining labels for decreasing distance thresholds.
+    '''
+    # Define initial values
+    shape = mask_in.shape
+    mask_remain = mask_in.copy()
+    thresh_dist = thresh_dist_start
+
+    labels_masks_it= []
+    threshs_it = []
+    labels_final = np.zeros(shape, dtype=np.uint32)
+    mask_seed = np.zeros(shape, dtype=np.uint8)
+
+    while thresh_dist > thresh_dist_stop:
+        # Shrink mask & expand labels
+        labels_masks, threshs = shrinkmask_expandlabels(mask_remain, thresh_dist=thresh_dist, verbose=verbose)
         
-        if isle_max > crit:
-            new_mask[idx] = new_mask[idx] - crit
+        # Assign iteration results to lists
+        labels_masks_it.append(labels_masks)
+        threshs_it.append(threshs)
 
-    new_mask[new_mask <= 0] = 0
-    new_mask[new_mask > 0] = 1
+        # Assign values for next iteration
+        thresh_dist = thresh_dist - 1
+        mask_remain = labels_masks[1]
 
-    new_mask = new_mask.astype(np.uint8) 
+        # Add up labels
+        labels = labels_masks[0]
+        labels[labels > 0] = labels[labels > 0] + np.max(labels_final.flatten())
+        labels_final = labels_final + labels
+
+        # Add current seeds
+        mask_seed += labels_masks[3]
     
-    return new_mask
+
+    # Define return mask and mask_seed
+    mask = labels_masks_it[0][2] # Initial mask with small holes and objects removed
+    mask_seed = mask_seed + mask
+
+    # Expand final labels quite a bit (possible due to next step of restriction to inital dilated mask)
+    labels_final = segmentation.expand_labels(labels_final,distance=3)
+    
+    # Resrict expanded labels to dilated original mask
+    mask_dilated = morph.dilation(
+        mask,
+        footprint=morph.disk(1),
+    ).astype(np.uint8)
+    labels_final[mask_dilated == 0] = 0
+
+    # Boundaries
+    bounds = labels_to_bounds(labels_final)
+
+    return labels_final, bounds, mask_seed
+
 
 #%%
-def seeds_by_gradient(channels: List[np.ndarray,], mask: np.ndarray):
+def labels_to_bounds(labels):
+    '''
+    Return boundaries of labels, i.e. integer labeled connected components in image.
+    '''
+    bounds = segmentation.find_boundaries(
+        labels,
+        connectivity=1,
+        mode='outer',
+    ).astype(np.uint8)
+    bounds = morph.thin(bounds)
+
+    return bounds
+
+
+#%%
+def labels_resize(labels, shape):
+    '''
+    Resize labels to a defined shape.
+    '''
+    labels_resize = transform.resize(
+        labels,
+        output_shape=shape,
+        order=0,
+        preserve_range=True,
+        )
     
-    shape = (channels[0].shape[0], channels[0].shape[1], len(channels))
-    kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE,(3,3))
-
-    # Init
-    img = np.zeros(shape, dtype=np.float32)
-    grad = np.zeros(shape, dtype=np.float32)
-    edge = np.zeros(shape, dtype=np.uint8)
-
-    # Canny edge detection for each channel
-    for i, c in enumerate(channels):
-        img[:,:,i], grad[:,:,i], edge[:,:,i] = _canny_edge(c, mask)
-
-    # Sum edges
-    edge_sum = np.sum(edge, axis=-1)
-    edge_sum[edge_sum > 0] = 1
-    edge_sum[edge_sum <= 0] = 0
-    edge_sum = edge_sum.astype(np.uint8)
-
-    # Morphological closing of summed edges
-    edge_sum = cv.dilate(edge_sum, kernel, iterations=1)
-    edge_sum = cv.erode(edge_sum, kernel, iterations=1)
-
-    # Combined maximum gradient image
-    grad_max = np.max(grad, axis=-1)
-
-    # Seed for marker generation by shrinking
-    seed = mask.astype(np.uint8)
-    seed[edge_sum == 1] = 0
-    
-    kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE,(3,3))
-    seed = cv.erode(seed, kernel, iterations=1)
-
-    # Generate markers by seed shrinking
-    markers = seed.copy()
-    for i in range(10):
-        markers = divide_connectedComponents(markers, percentile=50)
-
-    # Generate marker_combo for watershed
-    # Aim is to set:
-    #   sure_bg -> 1
-    #   unknown -> 0
-    #   marker  -> >=2
-    marker_combo = np.invert(mask).astype(np.int16) # Now: sure_bg -> 1
-    count, markers = cv.connectedComponents(markers, connectivity=8, ltype=cv.CV_16U)
-    markers = markers + 1
-    markers[markers == 1] = 0 # Now all outside markers -> 0, markers -> >=2
-    marker_combo = marker_combo + markers
-    # marker_combo[edge_sum == 1] = 1
-
-    # Prepare grad_max as image for watershed
-    grad_max_int8 = grad_max.copy()
-    grad_max_int8[np.invert(mask)] = 0
-    grad_max_int8 -= np.min(grad_max_int8[mask])
-    grad_max_int8 *= (255 / np.max(grad_max_int8[mask]))
-
-    img = np.zeros((shape[0], shape[1], 3), dtype=np.uint8)
-    for i in range(3):
-        img[:,:,i] = grad_max_int8
-
-    # Watershed
-    ws_out = cv.watershed(img, marker_combo.copy())
-
-    marker_combo[edge_sum == 1] = 1
-    
-    return grad_max, edge_sum, marker_combo, ws_out
-    
-    
-    
+    return labels_resize
 

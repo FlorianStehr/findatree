@@ -5,10 +5,12 @@ import importlib
 import rasterio
 from rasterio.warp import reproject, Resampling
 import cv2 as cv
+import skimage.measure as measure
 
-from findatree import segmentation2 as segment2
+from findatree import object_properties as objprops
 
-importlib.reload(segment2)
+importlib.reload(objprops)
+
 
 #%%
 def print_raster_info(paths: List[str]) -> None:
@@ -211,8 +213,11 @@ def _close_nan_holes(img: np.ndarray, max_pxs: int = 200) -> np.ndarray:
     mask = np.zeros(img.shape, dtype=np.uint8)
     mask[np.isnan(img)] = 1
 
-    # Get indices of connectedComponents (ccs)
-    ccs_idx = segment2.connectedComponents_idx(mask)
+    # Label connected components (ccs)
+    labels = measure.label(mask, background=0, return_num=False, connectivity=1)
+
+    # Get indices of ccs 
+    ccs_idx = objprops.labels_idx(labels)
 
     # Remove all ccs with len(cc) > max_pxs
     ccs_idx = [cc_idx for cc_idx in ccs_idx if len(cc_idx[0]) <= max_pxs]
@@ -250,12 +255,16 @@ def _close_nan_holes(img: np.ndarray, max_pxs: int = 200) -> np.ndarray:
         cc_ring_idx = (cc_box_ring_idx[0] + box_lims[0][0], cc_box_ring_idx[1] + box_lims[1][0])
 
         # Fill hole in image with median of ring around hole
-        img_closed[cc_idx] = np.nanmedian(img_closed[cc_ring_idx])
+        try:
+            img_closed[cc_idx] = np.nanmedian(img_closed[cc_ring_idx])
+        except:
+            img_closed[cc_idx] = np.nan
 
         # Assign val of 2 to ring values in mask
         mask[cc_ring_idx] = 2
 
     return img_closed, mask
+
 
 #%%
 
@@ -264,7 +273,7 @@ def define_channels(channels_in, reduce=0):
     Normalize channels, convert to ``numpy.float32`` dtype and optionally reduce by using gaussian image pyramids
     '''
     channels = {}
-    shape = channels_in[list(channels_in.keys())[0]].shape[:2]
+    shape_in = channels_in[list(channels_in.keys())[0]].shape[:2]
 
     # Normalize primary channels and convert to float32 dtype
     channels['blue'] = (channels_in['blue'] / (2**16 - 1)).astype(np.float32)
@@ -279,7 +288,7 @@ def define_channels(channels_in, reduce=0):
     channels['ndvi'] = (channels['nir'] - channels['red']) / (channels['nir'] + channels['red'])
     
     # RGB
-    rgb = np.zeros((shape[0], shape[1], 3), dtype=np.float32)
+    rgb = np.zeros((shape_in[0], shape_in[1], 3), dtype=np.float32)
     rgb[:,:,0] = channels['blue']
     rgb[:,:,1] = channels['green']
     rgb[:,:,2] = channels['red']
@@ -293,7 +302,7 @@ def define_channels(channels_in, reduce=0):
 
     # Optional resolution reduction by gaussian image pyramid
     if reduce == 0:
-        return channels
+        return channels, shape_in
     
     else:
         for key in channels:
@@ -302,4 +311,6 @@ def define_channels(channels_in, reduce=0):
                 img = cv.pyrDown(img)
             channels[key] = img
         
-        return channels
+        shape_out = channels[list(channels.keys())[0]].shape[:2]
+        
+        return channels, shape_out
