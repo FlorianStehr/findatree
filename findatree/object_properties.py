@@ -43,33 +43,4 @@ def labels_idx(labels_in: np.ndarray) -> List[Tuple[np.ndarray, np.ndarray]]:
     return labels_idx
 
 
-#%%
-def connectedComponent_idx_tobox(idx: Tuple[np.ndarray, np.ndarray]) -> Tuple[Tuple, ...]:
-    '''
-    Project indices of a single connectedComponent to indices in the minimum spanning box. 
-    '''
-    box_origin = (np.min(idx[0]), np.min(idx[1])) 
-    
-    box_width = (
-        np.max(idx[0]) - np.min(idx[0]) + 1,
-        np.max(idx[1]) - np.min(idx[1]) + 1,
-    )
 
-    box_idx = (
-        idx[0].copy() - box_origin[0],
-        idx[1].copy() - box_origin[1],
-    )
-    return box_idx, box_origin, box_width
-
-
-#%%
-def connectedComponent_img_tobox(idx, img):
-    '''
-    Fill connectedComponent in minimum spanning box with data from image.
-    '''
-    box_idx, box_origin, box_width = connectedComponent_idx_tobox(idx)
-    
-    box = np.zeros((box_width[0], box_width[1]), dtype=np.float32)
-    box[box_idx] = img[idx]
-
-    return box

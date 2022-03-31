@@ -38,7 +38,7 @@ def print_raster_info(paths: List[str]) -> None:
 
 
 #%%
-def reproject_all_intersect(paths: List[str], res: float) -> Tuple:
+def reproject_all_intersect(paths: List[str], resolution: float) -> Tuple:
     '''
     Reproject all rasters in raster-files (.tif) given by ``paths`` to the intersection of all rasters and a defined resolution ``res`` using rasterio package.
     
@@ -46,7 +46,7 @@ def reproject_all_intersect(paths: List[str], res: float) -> Tuple:
     ----------
     paths: List[str]
         Full path names to raster-files
-    res: float
+    resolution: float
         Resolution per px in final rasters.
 
     Returns:
@@ -90,14 +90,14 @@ def reproject_all_intersect(paths: List[str], res: float) -> Tuple:
     
     # Define common (i.e. destination) shape in px of all rasters after reprojection based on intersection area and resolution
     dest_shape = (
-        int(np.floor((inter_bound['top'] - inter_bound['bottom']) / res)),
-        int(np.floor((inter_bound['right'] - inter_bound['left']) / res)),
+        int(np.floor((inter_bound['top'] - inter_bound['bottom']) / resolution)),
+        int(np.floor((inter_bound['right'] - inter_bound['left']) / resolution)),
     )
     
     # Define common (i.e. destination) Affine based on intersection area and resolution
     dest_A = rasterio.Affine(
-        res, 0, inter_bound['left'],
-        0, -res, inter_bound['top'])
+        resolution, 0, inter_bound['left'],
+        0, -resolution, inter_bound['top'])
 
     # Define common (i.e. destination) coordinatereference system 
     dest_crs = crss[0]
