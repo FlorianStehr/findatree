@@ -97,8 +97,15 @@ def watershed_by_peaks_in_disttrafo(image, mask, peak_min_distance, resolution):
     peaks = np.zeros_like(mask,dtype=np.uint8)
     peaks[tuple(peaks_idx.T)] = 1
 
+    # Dilate peaks a bit
+    peaks = morph.dilation(
+        peaks,
+        footprint=morph.disk(3),   
+    )
+
     # Prepare output mask + seed
     mask_seed = mask + peaks
+
  
     # Label peaks to generate markers
     markers = measure.label(peaks, background=0, return_num=False, connectivity=2)
@@ -107,6 +114,24 @@ def watershed_by_peaks_in_disttrafo(image, mask, peak_min_distance, resolution):
     labels = segmentation.watershed(
         - dist * image,
         markers=markers, 
+        mask=mask,
+        watershed_line=True,
+    )
+
+    # Remove contracted, small labels after watershed
+    labels = morph.remove_small_objects(
+        labels,
+        min_size=5,
+        connectivity=1,
+    )
+
+    # Relabel in sequential manner after removing contracted labels
+    labels = segmentation.relabel_sequential(labels)[0]
+
+    # Watershed again, after removing contracted and sequential relabeling
+    labels = segmentation.watershed(
+        - dist * image,
+        markers=labels, 
         mask=mask,
         watershed_line=True,
     )
