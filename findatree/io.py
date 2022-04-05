@@ -268,7 +268,7 @@ def _close_nan_holes(img: np.ndarray, max_pxs: int = 200) -> np.ndarray:
 
 #%%
 
-def define_channels(channels_in, reduce=0):
+def define_channels(channels_in, downscale=0):
     '''
     Normalize channels, convert to ``numpy.float32`` dtype and optionally reduce by using gaussian image pyramids
     '''
@@ -301,16 +301,16 @@ def define_channels(channels_in, reduce=0):
     channels['s'] = hls[:,:,2]
 
     # Optional resolution reduction by gaussian image pyramid
-    if reduce == 0:
-        return channels, shape_in
+    if downscale == 0:
+        return channels, shape_in, shape_in
     
     else:
         for key in channels:
             img = channels[key].copy()
-            for i in range(reduce):
+            for i in range(downscale):
                 img = cv.pyrDown(img)
             channels[key] = img
         
         shape_out = channels[list(channels.keys())[0]].shape[:2]
         
-        return channels, shape_out
+        return channels, shape_in, shape_out
