@@ -97,7 +97,7 @@ def watershed_by_peaks_in_disttrafo(image, mask, peak_min_distance, px_width):
     '''
 
     # Remove small holes in mask
-    area_thresh = 0.2
+    area_thresh = 0.
     area_thresh_px = int(np.round(area_thresh / px_width**2))
     print(f"    ... (watershed) Removing holes of area: {area_thresh:.2f} [m**2] = {area_thresh_px:.0f} [px]")
     mask = morph.remove_small_holes(
@@ -123,7 +123,7 @@ def watershed_by_peaks_in_disttrafo(image, mask, peak_min_distance, px_width):
     markers = measure.label(peaks, background=0, return_num=False, connectivity=2)
 
     # Expand marker without overlap before watershed
-    marker_expansion = int(np.floor(0.4 / px_width))
+    marker_expansion = int(np.floor(0.8 / px_width))
     markers = segmentation.expand_labels(
         markers,
         distance=marker_expansion,
@@ -206,7 +206,7 @@ def main(
         'channel': 'l',
         'downscale': 1,
         'blur': False,
-        'width': 60,
+        'width': 30,
     }
     thresh_dict_keys = [k for k in thresh_dict]
     for k in thresh_dict_standard:
