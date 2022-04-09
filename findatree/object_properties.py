@@ -163,6 +163,19 @@ def prop_to_intensitycoords(prop, channels):
         names.extend(['y_com_' + key])
         data.append(np.sum(idx[0] * c_val) / np.sum(c_val))
 
+        names.extend(['x_perc75_' + key])
+        data.append(np.mean(idx[1][c_val > np.percentile(c_val, 75)]))
+
+        names.extend(['y_perc75_' + key])
+        data.append(np.mean(idx[0][c_val > np.percentile(c_val, 75)]))
+
+        names.extend(['x_perc25_' + key])
+        data.append(np.mean(idx[1][c_val < np.percentile(c_val, 25)]))
+
+        names.extend(['y_perc25_' + key])
+        data.append(np.mean(idx[0][c_val < np.percentile(c_val, 25)]))
+
+
     data = np.array(data, dtype=np.float32)
 
     return data, names

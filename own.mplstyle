@@ -23,7 +23,7 @@ grid.alpha: 0
 lines.linewidth:1
 lines.markersize:5
 errorbar.capsize:2
-axes.prop_cycle: cycler('color', ['black','green','blue','red','magenta','yellow','gray'])
+axes.prop_cycle: cycler('color', ['blue','green','red','magenta','darkred','black','yellow','gray'])
 
 #### Font
 # xtick.labelsize:8
