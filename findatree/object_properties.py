@@ -1,9 +1,9 @@
 from typing import List
 from typing import Tuple
 import numpy as np
+from tqdm import tqdm
 
 import skimage.measure as measure
-
 
 #%%
 def labels_idx(labels_in: np.ndarray) -> List[Tuple[np.ndarray, np.ndarray]]:
@@ -46,32 +46,19 @@ def labels_idx(labels_in: np.ndarray) -> List[Tuple[np.ndarray, np.ndarray]]:
 
 
 #%%
-def extract_props(labels, channels, px_width):
-
-    shape = labels.shape
-    c_names = [key for key in channels]
-    c_n = len(c_names)
-
-    image = np.zeros((shape[0], shape[1], c_n))
-    for i, key in enumerate(c_names):
-        image[:,:,i] = channels[key]
-
-    # Use skimage to get object properties
-    props = measure.regionprops(labels,image)
+def prop_to_areas(prop):
     
-    # Get label ID
-    labels = np.array([[prop['label']] for prop in props], dtype=np.float32)
-
-    # Get area props
     area_names = [
         'area',
         'area_convex',
         'area_filled',
     ]
-    areas = np.array([[prop[area_name] for area_name in area_names] for prop in props], dtype=np.float32)
-    areas = areas * px_width**2 # Unit conversion of areas to m**2
+    areas = np.array([prop[area_name] for area_name in area_names])
+    return areas, area_names
 
-    # Get distance props
+
+#%%
+def prop_to_distances(prop):
     distance_names = [
         'axis_major_length',
         'axis_minor_length',
@@ -80,40 +67,150 @@ def extract_props(labels, channels, px_width):
         'perimeter_crofton',
         'feret_diameter_max',
     ]
-    distances = np.array([[prop[distance_name] for distance_name in distance_names] for prop in props], dtype=np.float32)
-    distances = distances * px_width # Unit conversion of areas to m
+    distances = np.array([prop[distance_name] for distance_name in distance_names], dtype=np.float32)
+    return distances, distance_names
 
-    # Get ratio props
+#%%
+def prop_to_ratios(prop):
     ratio_names = [
         'eccentricity',
         'extent',
         'solidity',
     ]
-    ratios = np.array([[prop[ratio_name] for ratio_name in ratio_names] for prop in props], dtype=np.float32)
+    ratios = np.array([prop[ratio_name] for ratio_name in ratio_names], dtype=np.float32)
+    return ratios, ratio_names
 
-    # Join props that we got so far
-    props_out = np.hstack((labels, areas, distances, ratios))
-    names_out = ['label'] + area_names + distance_names + ratio_names
 
+#%%
+def prop_to_intensitycoords(prop, channels):
     
-    # Get intensity props
-    intensity_names = [
-        'intensity_min',
-        'intensity_mean',
-        'intensity_max',
-    ]
-    intensities_all_names = []
-    
+    c_names = [key for key in channels]  # Channel names
+    c_shape = channels[c_names[0]]  # Shape of image
+    c_l_idx = c_names.index('l')  # Which index corresponds to lighntess channel
+
+    # Indices of the label in image coordinates
+    idx = prop['coords']
+    idx = (idx[:,0], idx[:,1])
+
+    # Prepare flat array of values of each channel
+    c_vals = np.zeros((len(c_names), len(idx[0])), dtype=np.float32)
+    for i, key in enumerate(channels):
+        img = channels[key]
+        c_vals[i,:] = img[idx]
+
+    # Get lighntess values
+    l_vals = c_vals[c_l_idx, :]
+    # Set the threshold to upper 50 percentile of lightness values
+    l_thresh = np.percentile(l_vals, 50)
+    l_max = np.max(l_vals)
+    if l_thresh == l_max: # Exception for totally homogeneos and/or small number of lighntess values
+        l_thresh = np.min(l_vals)
+
+    # Get indices where lighntess values are above threshold
+    l_upper_idx = np.where(l_vals > l_thresh)[0]
+    l_lower_idx = np.where(l_vals <= l_thresh)[0]
+    idx_bright = (idx[0][l_upper_idx], idx[1][l_upper_idx])
+
+    # Init data
+    data = []
+    names = []
+
+    # Add number of bright pixels
+    names.extend(['n_px_bright'])
+    data.append(len(idx_bright[0]))
+
     for i, key in enumerate(c_names):
-        
-        # Get intensities for one channel
-        intensities = np.array([[prop[intensity_name][i] for intensity_name in intensity_names] for prop in props], dtype=np.float32)
-        
-        # Add intensities to so far joint props
-        props_out = np.hstack((props_out, intensities))
-        
-        # Add names to so far joint names
-        names_out = names_out + [intensity_name[10:] + '_' + key for intensity_name in intensity_names]
+        # Get values of one channel
+        c_val = c_vals[i, :]
 
+        names.extend(['min_' + key])
+        data.append(np.min(c_val))
+
+        names.extend(['max_' + key])
+        data.append(np.max(c_val))
+
+        names.extend(['mean_' + key])
+        data.append(np.mean(c_val))
+
+        names.extend(['mean_lower_' + key])
+        data.append(np.mean(c_val[l_lower_idx]))
+
+        names.extend(['mean_upper_' + key])
+        data.append(np.mean(c_val[l_upper_idx]))
+
+        names.extend(['x_max_' + key])
+        data.append(idx[1][np.argmax(c_val)])
+
+        names.extend(['y_max_' + key])
+        data.append(idx[0][np.argmax(c_val)])
+
+    data = np.array(data, dtype=np.float32)
+
+    return data, names
+
+
+#%%
+def prop_to_all(prop, channels, px_width):
+    # Get label
+    label_name = ['label']
+    label = np.array([prop[label_name[0]]])
+
+    # Get areas
+    areas, area_names = prop_to_areas(prop)
+    areas = areas * px_width**2 # Unit conversion from px to [m**2]
+
+    # Get distances
+    distances, distance_names = prop_to_distances(prop)
+    distances = distances * px_width # Unit conversion from px to [m]
+
+    # Get ratios
+    ratios, ratio_names = prop_to_ratios(prop)
+
+    # Get intensities and coordinates
+    intcoords, intcoord_names = prop_to_intensitycoords(prop, channels)
+
+    # Concatenate all props and corresponding names
+    props_all = np.concatenate(
+        (label,
+        areas,
+        distances,
+        ratios,
+        intcoords,
+        ),
+    )
+    names_all = label_name + area_names + distance_names + ratio_names + intcoord_names
+
+    return props_all, names_all
+
+#%%
+
+def labels_to_props_all(labels, channels_in, px_width, include_labels=None):
+
+    # Copy input channels
+    channels = channels_in.copy()
+
+    # Exlude RGB channel
+    exclude_channels= ['RGB'] # RGB channel of shape (M,N,3) is excluded!
+    for c_ex in exclude_channels:
+        channels.pop(c_ex)
+
+    # Use skimage to get object properties
+    props = measure.regionprops(labels, None)
     
-    return props_out, names_out
+    # Only compute props of labels included in include_labels
+    if include_labels is not None:
+        props_include = [prop for prop in props if prop['label'] in include_labels]
+    else:
+        props_include = props
+
+    # Loop through all labels and extract properties as np.ndarray
+    for i, prop in enumerate(tqdm(props_include)):
+        
+        if i == 0: # First assignment
+            data, names = prop_to_all(prop, channels, px_width)
+        else:
+            data_i, names = prop_to_all(prop, channels, px_width)
+            data = np.vstack((data, data_i))
+
+
+    return data, names

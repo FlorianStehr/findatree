@@ -4,6 +4,8 @@ import matplotlib.pyplot as plt
 from typing import List
 from typing import Tuple
 
+import skimage.exposure as exposure
+
 
 def _image_minmax(img, percentile: float=5) -> Tuple[float, float]:
 
@@ -46,11 +48,13 @@ def show_channels(
         Number of colums and rows in figure. Defaults to ``[len(channels), 1]``.
     xylim: List[Tuple, Tuple]
         x-y-limits given as ``[(x_center, x_width), (y_center, y_width)]``. Defaults to cover orginal dimensions of channels.
-    mask: np.ndarray(shape=(m,n), dtype=np.bool_):
-        Channel indices where ``mask == False`` will be set to 0. Must be of shape ``(m,n)``. De
+    mask: np.ndarray(shape=(m,n), dtype=np.bool_)
+        Channel indices where ``mask == False`` will be set to 0. Must be of shape ``(m,n)``.
+    bounds: np.ndarray(shape=(m,n), dtype=np.uint8)
+        Binary image of segments.
     contrasts: List[Tuple, ...]
         List of tuples containing contrast lower and upper threshold for each channel (i.e. ``vmin``, ``vmax`` of matplotlib.pyplot.imshow()).
-        Defaults to ``[(np.nanpercentile(c.flatten(), 1), np.nanpercentile(c.flatten(), 99)) for c in channels]`` after mask was applied.
+        Defaults to ``[(np.nanpercentile(c.flatten(), 5), np.nanpercentile(c.flatten(), 95)) for c in channels]`` after mask was applied.
     channel_names: List[str, ...]
         List of channel names to be shwon as title of each axis in figure.
     zoom: float
@@ -82,6 +86,11 @@ def show_channels(
         mask = np.ones(shape, dtype=np.bool_)
     else:
         mask = kwargs['mask'].astype(np.bool_)
+    if 'bounds' not in kwargs:
+        bounds = np.ones(shape, dtype=np.float) * np.nan
+    else:
+        bounds = kwargs['bounds'].astype(np.float32)
+        bounds[bounds==0] = np.nan
     #
     if 'xylim' not in kwargs:
         xylim = [(s // 2 + 1, s // 2 + 1) for s in shape[::-1]] # (center, width)
@@ -110,6 +119,7 @@ def show_channels(
     cmax = xylim[0][0] + xylim[0][1]
     channels = [c[rmin:rmax, cmin:cmax] for c in channels]
     mask = mask[rmin:rmax, cmin:cmax]
+    bounds = bounds[rmin:rmax, cmin:cmax]
 
     # Apply mask
     channels_mask = []
@@ -151,6 +161,9 @@ def show_channels(
                 vmin = contrasts[i][0]
                 vmax = contrasts[i][1]
 
+            if img.shape[-1] == 3: # Three channel images, e.g.RGB
+                img = exposure.rescale_intensity(img, in_range=(vmin, vmax))
+            
             if use_random_cmap[i]:
                 cmap = cmap_random
                 img[img > 0] = img[img > 0] % 256 + img[img > 0] // 256
@@ -165,16 +178,24 @@ def show_channels(
                 vmax=vmax,
                 cmap=cmap,
             )
+            mapp = ax.imshow(
+                bounds,
+                vmin=0,
+                vmax=1,
+                cmap='Greys_r',
+            )
 
             tick = 10 ** np.floor(np.log10(cmax - cmin))
             if ((cmax - cmin) / tick >= 1) & ((cmax - cmin) / tick <= 2):
                 tick = (tick / 10) * 2.5
             ax.set_xticks(np.arange(0, cmax - cmin, tick))
+            ax.set_xticklabels(np.arange(cmin, cmax, tick, dtype=np.uint16))
             
             tick = 10 ** np.floor(np.log10(rmax - rmin))
             if ((rmax - rmin) / tick >= 1) & ((rmax - rmin) / tick <= 2):
                 tick = (tick / 10) * 2.5
             ax.set_yticks(np.arange(0, rmax - rmin, tick))
+            ax.set_yticklabels(np.arange(rmin, rmax, tick, dtype=np.uint16))
 
             if (len(channel_names) == len(channels)):
                 ax.set_title(f"{channel_names[i]} [{vmin:.0e} - {vmax:.0e}]")

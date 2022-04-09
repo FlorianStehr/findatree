@@ -6,6 +6,7 @@ import rasterio
 from rasterio.warp import reproject, Resampling
 import cv2 as cv
 import skimage.measure as measure
+import skimage.exposure as exposure
 
 from findatree import object_properties as objprops
 
@@ -289,10 +290,12 @@ def define_channels(channels_in, downscale=0):
     
     # RGB
     rgb = np.zeros((shape_in[0], shape_in[1], 3), dtype=np.float32)
-    rgb[:,:,0] = channels['blue']
+    rgb[:,:,0] = channels['red']
     rgb[:,:,1] = channels['green']
-    rgb[:,:,2] = channels['red']
-    channels['rgb'] = np.prod(rgb, axis=2)**(1/3)
+    rgb[:,:,2] = channels['blue']
+    channels['RGB'] = rgb                           # Three channel RGB image
+    channels['rgb'] = np.prod(rgb, axis=2)**(1/3)   # Geometric mean RGB image
+    
 
     # HLS
     hls = cv.cvtColor(rgb, cv.COLOR_RGB2HLS)
