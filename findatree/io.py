@@ -278,23 +278,24 @@ def define_channels(channels_in, downscale=0):
 
     # Normalize primary channels and convert to float32 dtype
     channels['blue'] = (channels_in['blue'] / (2**16 - 1)).astype(np.float32)
-    channels['blue'] = (channels_in['blue'] / (2**16 - 1)).astype(np.float32)
-    channels['red'] = (channels_in['red'] / (2**16 - 1)).astype(np.float32)
     channels['green'] = (channels_in['green'] / (2**16 - 1)).astype(np.float32)
+    channels['red'] = (channels_in['red'] / (2**16 - 1)).astype(np.float32)
     channels['re'] = (channels_in['re'] / (2**16 - 1)).astype(np.float32)
     channels['nir'] = (channels_in['nir'] / (2**16 - 1)).astype(np.float32)
 
     # Secondary channels
     channels['chm'] = (channels_in['dsm'] - channels_in['dtm']).astype(np.float32)
     channels['ndvi'] = (channels['nir'] - channels['red']) / (channels['nir'] + channels['red'])
+    channels['ndvire'] = (channels['re'] - channels['red']) / (channels['re'] + channels['red'])
+    channels['ndre'] = (channels['nir'] - channels['re']) / (channels['nir'] + channels['re'])
     
     # RGB
     rgb = np.zeros((shape_in[0], shape_in[1], 3), dtype=np.float32)
     rgb[:,:,0] = channels['red']
     rgb[:,:,1] = channels['green']
     rgb[:,:,2] = channels['blue']
-    channels['RGB'] = rgb                           # Three channel RGB image
-    channels['rgb'] = np.prod(rgb, axis=2)**(1/3)   # Geometric mean RGB image
+    channels['RGB'] = rgb  # Three channel RGB image
+    channels['rgb'] = np.mean(rgb, axis=2)  # Arithmetic mean RGB image
     
 
     # HLS

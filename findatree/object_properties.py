@@ -86,7 +86,6 @@ def prop_to_intensitycoords(prop, channels):
     
     c_names = [key for key in channels]  # Channel names
     c_shape = channels[c_names[0]]  # Shape of image
-    c_l_idx = c_names.index('l')  # Which index corresponds to lighntess channel
 
     # Indices of the label in image coordinates
     idx = prop['coords']
@@ -98,13 +97,15 @@ def prop_to_intensitycoords(prop, channels):
         img = channels[key]
         c_vals[i,:] = img[idx]
 
+    # Which channel index corresponds to lightness channel
+    c_l_idx = c_names.index('l')
     # Get lighntess values
     l_vals = c_vals[c_l_idx, :]
     # Set the threshold to upper 50 percentile of lightness values
     l_thresh = np.percentile(l_vals, 50)
     l_max = np.max(l_vals)
-    if l_thresh == l_max: # Exception for totally homogeneos and/or small number of lighntess values
-        l_thresh = np.min(l_vals)
+    # if l_thresh == l_max: # Exception for totally homogeneos and/or small number of lighntess values
+    #     l_thresh = np.min(l_vals)
 
     # Get indices where lighntess values are above threshold
     l_upper_idx = np.where(l_vals > l_thresh)[0]
@@ -130,12 +131,24 @@ def prop_to_intensitycoords(prop, channels):
         data.append(np.max(c_val))
 
         names.extend(['mean_' + key])
+        data.append(np.median(c_val))
+        
+        names.extend(['std_' + key])
+        data.append(np.std(c_val))
+
+        names.extend(['median_' + key])
         data.append(np.mean(c_val))
 
-        names.extend(['mean_lower_' + key])
+        names.extend(['perc25_' + key])
+        data.append(np.percentile(c_val, 25))
+
+        names.extend(['perc75_' + key])
+        data.append(np.percentile(c_val, 75))
+
+        names.extend(['mean_lowerl_' + key])
         data.append(np.mean(c_val[l_lower_idx]))
 
-        names.extend(['mean_upper_' + key])
+        names.extend(['mean_upperl_' + key])
         data.append(np.mean(c_val[l_upper_idx]))
 
         names.extend(['x_max_' + key])
@@ -143,6 +156,12 @@ def prop_to_intensitycoords(prop, channels):
 
         names.extend(['y_max_' + key])
         data.append(idx[0][np.argmax(c_val)])
+
+        names.extend(['x_com_' + key])
+        data.append(np.sum(idx[1] * c_val) / np.sum(c_val))
+
+        names.extend(['y_com_' + key])
+        data.append(np.sum(idx[0] * c_val) / np.sum(c_val))
 
     data = np.array(data, dtype=np.float32)
 
