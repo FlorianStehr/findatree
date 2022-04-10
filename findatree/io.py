@@ -1,5 +1,8 @@
 from typing import List
 from typing import Tuple
+import glob
+import re
+import os
 import numpy as np
 import importlib
 import rasterio
@@ -14,6 +17,88 @@ importlib.reload(objprops)
 
 
 #%%
+def check_path(paths, pattern):
+    if len(paths) == 0:
+        path = None
+        print('0 '+ pattern + 's found in given directories!!!')
+        print('  -> Returning ' + pattern + ': ' + 'None')
+    elif len(paths) == 1:
+        path = paths[0]
+        print('1 '+ pattern + 's found in given directories, OK.')
+        print('  -> Returning ' + pattern + ': ' + os.path.split(path)[-1])
+
+    else:
+        path = paths[0]
+        print(str(len(paths))+ ' ' + pattern + 's found in given directories!!!')
+        print('  -> Returning ' + pattern + ': ' + os.path.split(path)[-1])
+    
+    return path
+
+#%%
+def find_paths_in_dirs(
+    dir_names,
+    tnr_number=None,
+    verbose=True,
+    filetype_pattern = '*.tif',
+    dsm_pattern = 'dsm',
+    dtm_pattern = 'dtm',
+    ortho_pattern = 'ortho',
+    ):
+
+    # Get full paths to all files that match ``filetype_pattern`` in all directories
+    paths = []
+    for dir_name in dir_names:
+            path = sorted(glob.glob( os.path.join( dir_name,filetype_pattern) ) )
+            paths.extend(path)
+
+    # ``tnr_number`` to pattern 
+    if tnr_number is None:
+        print('No tnr found, displaying all available ' + filetype_pattern + 's:')
+        for p in paths: print('  ' + p)
+        print()
+
+    tnr_number = str(tnr_number)
+    tnr_pattern = 'tnr_' + tnr_number
+
+    # Get paths that contain ``tnr_number``
+    paths = [p for p in paths if bool(re.search(tnr_pattern, os.path.split(p)[-1], re.IGNORECASE))]
+
+    # Get path that contains non-case sensitive ``dsm_pattern``
+    paths_dsm = [p for p in paths if bool(re.search(dsm_pattern, os.path.split(p)[-1], re.IGNORECASE))]
+    path_dsm = check_path(paths_dsm, dsm_pattern)
+
+    # Get path that contains non-case sensitive ``dtm_pattern``
+    paths_dtm = [p for p in paths if bool(re.search(dtm_pattern, os.path.split(p)[-1], re.IGNORECASE))]
+    path_dtm = check_path(paths_dtm, dtm_pattern)
+
+    # Get path that contains non-case sensitive ``ortho_pattern``
+    paths_ortho = [p for p in paths if bool(re.search(ortho_pattern, os.path.split(p)[-1], re.IGNORECASE))]
+    path_ortho = check_path(paths_ortho, ortho_pattern)
+
+    # Join dsm/dtm/ortho paths
+    paths = [
+        path_dsm,
+        path_dtm,
+        path_ortho,
+    ]
+
+    params = {
+        'tnr': tnr_number,
+        'path_dsm': paths[0],
+        'path_dtm': paths[1],
+        'path_ortho': paths[2],
+    }
+
+    # Print parameters
+    if verbose:
+        print('-----------')
+        print('Parameters:')
+        for k in params: print(f"  {k:<30}: {params[k]}")
+
+
+    return paths, params
+
+##%%
 def print_raster_info(paths: List[str]) -> None:
     '''
     Quickly print some information about .tif geo-raster-file defined by paths.
@@ -39,27 +124,31 @@ def print_raster_info(paths: List[str]) -> None:
 
 
 #%%
-def reproject_all_intersect(paths: List[str], resolution: float) -> Tuple:
+def reproject_all_intersect(paths: List[str], px_width: float, verbose: bool=True) -> Tuple:
     '''
     Reproject all rasters in raster-files (.tif) given by ``paths`` to the intersection of all rasters and a defined resolution ``res`` using rasterio package.
     
     Parameters:
     ----------
     paths: List[str]
-        Full path names to raster-files
+        Full path names to raster-files in order [``path_dsm``, ``path_dtm``, ``path_ortho``]
     resolution: float
         Resolution per px in final rasters.
 
     Returns:
     -------
-    dest_bands_list: List[np.ndarray]
-        List of reprojected rasters in intersection and with defined resolution ``res`` given as np.ndarray of dtype=np.float64.
-    dest_mask: np.ndarray
-        Intersection mask of all repojected rasters as np.ndarray. Valid values -> 1, Non-valid values -> np.nan.
-    dest_A: rasterio.Affine
-        Affine geo-transform (rasterio) of all reprojected rasters
-    inter_bound: dict
-        Bounds in geo-coordinates of intersection box.
+    cs_prim: dict[np.ndarray,...]
+        Dictionary of reprojected rasters in intersection and with defined resolution ``resolution`` given as np.ndarray of dtype=np.float64.
+        Keys are: ['dsm', 'dtm', 'blue', 'green', 'red', 're', 'nir']
+    params: dict
+        * 'crs': Coordinate system of all reprojected rasters.
+        * 'px_width': Isotropic width per pixel in [m] of all reprojected rasters.
+        * 'shape': Shape  in [px] of images of all reprojected rasters.
+        * 'affine': Affine geo. transform of all reprojected rasters (see rasterio) as np.ndarray
+        * 'bound_left': Left boundary of intersection of all reprojected rasters (maximum).
+        * 'bound_bottom': Bottom boundary of intersection of all reprojected rasters (maximum).
+        * 'bound_right': Right boundary of intersection of all reprojected rasters (minimum).
+        * 'bound_top': Top boundary of intersection of all reprojected rasters (minimum).
     
     Notes:
     -----
@@ -91,14 +180,14 @@ def reproject_all_intersect(paths: List[str], resolution: float) -> Tuple:
     
     # Define common (i.e. destination) shape in px of all rasters after reprojection based on intersection area and resolution
     dest_shape = (
-        int(np.floor((inter_bound['top'] - inter_bound['bottom']) / resolution)),
-        int(np.floor((inter_bound['right'] - inter_bound['left']) / resolution)),
+        int(np.floor((inter_bound['top'] - inter_bound['bottom']) / px_width)),
+        int(np.floor((inter_bound['right'] - inter_bound['left']) / px_width)),
     )
     
     # Define common (i.e. destination) Affine based on intersection area and resolution
     dest_A = rasterio.Affine(
-        resolution, 0, inter_bound['left'],
-        0, -resolution, inter_bound['top'])
+        px_width, 0, inter_bound['left'],
+        0, -px_width, inter_bound['top'])
 
     # Define common (i.e. destination) coordinatereference system 
     dest_crs = crss[0]
@@ -180,8 +269,41 @@ def reproject_all_intersect(paths: List[str], resolution: float) -> Tuple:
     
     # Now go through all reprojected rasters and apply dest_mask
     dest_bands_list = [dest_bands * dest_mask.reshape((dest_shape[0], dest_shape[1], 1)) for dest_bands in dest_bands_list]
+
+    # Return primary channels as dictionary
+    cs_prim = {}
+    cs_prim['mask'] = dest_mask
+    for i, band in enumerate(dest_bands_list):
+        if i==0:
+            cs_prim['dsm'] = band[:,:,0]
+        elif i==1:
+            cs_prim['dtm'] = band[:,:,0]
+        elif i==2:
+            cs_prim['blue'] = band[:,:,0]
+            cs_prim['green'] = band[:,:,1]
+            cs_prim['red'] = band[:,:,2]
+            cs_prim['re'] = band[:,:,3]
+            cs_prim['nir'] = band[:,:,4]
     
-    return dest_bands_list, dest_mask, dest_A, inter_bound
+    # Return reprojection parameters as dictionary
+    params = {}
+    params['crs'] = dest_crs
+    params['affine'] = np.array(dest_A).reshape((3,3))
+    params['px_width'] = px_width
+    params['shape'] = dest_shape
+    params['bound_left'] = inter_bound['left']
+    params['bound_bottom'] = inter_bound['bottom']
+    params['bound_right'] = inter_bound['right']
+    params['bound_top'] = inter_bound['top']
+
+    # Print parameters
+    if verbose:
+        print('-----------')
+        print('Parameters:')
+        for k in params: print(f"  {k:<30}: {params[k]}")
+
+
+    return cs_prim, params
 
 #%%
 
@@ -269,44 +391,67 @@ def _close_nan_holes(img: np.ndarray, max_pxs: int = 200) -> np.ndarray:
 
 #%%
 
-def define_channels(channels_in, downscale=0):
+def channels_primary_to_secondary(cs_prim, params_cs_prim, downscale=0, verbose=True):
     '''
     Normalize channels, convert to ``numpy.float32`` dtype and optionally reduce by using gaussian image pyramids
     '''
-    channels = {}
-    shape_in = channels_in[list(channels_in.keys())[0]].shape[:2]
-
-    # Normalize primary channels and convert to float32 dtype
-    channels['blue'] = (channels_in['blue'] / (2**16 - 1)).astype(np.float32)
-    channels['green'] = (channels_in['green'] / (2**16 - 1)).astype(np.float32)
-    channels['red'] = (channels_in['red'] / (2**16 - 1)).astype(np.float32)
-    channels['re'] = (channels_in['re'] / (2**16 - 1)).astype(np.float32)
-    channels['nir'] = (channels_in['nir'] / (2**16 - 1)).astype(np.float32)
-
-    # Secondary channels
-    channels['chm'] = (channels_in['dsm'] - channels_in['dtm']).astype(np.float32)
-    channels['ndvi'] = (channels['nir'] - channels['red']) / (channels['nir'] + channels['red'])
-    channels['ndvire'] = (channels['re'] - channels['red']) / (channels['re'] + channels['red'])
-    channels['ndre'] = (channels['nir'] - channels['re']) / (channels['nir'] + channels['re'])
+    cs_prim_names = list(cs_prim.keys())
+    shape_prim = params_cs_prim['shape']
     
-    # RGB
-    rgb = np.zeros((shape_in[0], shape_in[1], 3), dtype=np.float32)
-    rgb[:,:,0] = channels['red']
-    rgb[:,:,1] = channels['green']
-    rgb[:,:,2] = channels['blue']
-    channels['RGB'] = rgb  # Three channel RGB image
-    channels['rgb'] = np.mean(rgb, axis=2)  # Arithmetic mean RGB image
-    
+    sec_in_prim = 'ndvi' in cs_prim_names
+    if sec_in_prim: print('    ... [io.channels_primary_to_secondary()] already secondary channels!')
 
-    # HLS
-    hls = cv.cvtColor(rgb, cv.COLOR_RGB2HLS)
-    channels['h'] = hls[:,:,0]
-    channels['l'] = hls[:,:,1]
-    channels['s'] = hls[:,:,2]
+    if not sec_in_prim: # Input is indeed a primary channel dictionary -> Normalize and compute secondary channels!
+        channels = {}
+        ############################## Primary channel normalization
+        # Normalize and convert to float32 dtype
+        channels['blue'] = (cs_prim['blue'] / (2**16 - 1)).astype(np.float32)
+        channels['green'] = (cs_prim['green'] / (2**16 - 1)).astype(np.float32)
+        channels['red'] = (cs_prim['red'] / (2**16 - 1)).astype(np.float32)
+        channels['re'] = (cs_prim['re'] / (2**16 - 1)).astype(np.float32)
+        channels['nir'] = (cs_prim['nir'] / (2**16 - 1)).astype(np.float32)
+
+
+        ############################## Secondary channels
+        # Canopy height model (CHM)
+        channels['chm'] = (cs_prim['dsm'] - cs_prim['dtm']).astype(np.float32)
+
+        # Vegetation indices
+        channels['ndvi'] = (channels['nir'] - channels['red']) / (channels['nir'] + channels['red'])
+        channels['ndvire'] = (channels['re'] - channels['red']) / (channels['re'] + channels['red'])
+        channels['ndre'] = (channels['nir'] - channels['re']) / (channels['nir'] + channels['re'])
+
+        # RGB
+        rgb = np.zeros((shape_prim[0], shape_prim[1], 3), dtype=np.float32)
+        rgb[:,:,0] = channels['red']
+        rgb[:,:,1] = channels['green']
+        rgb[:,:,2] = channels['blue']
+        channels['RGB'] = rgb  # Three channel RGB image
+        channels['rgb'] = np.mean(rgb, axis=2)  # Arithmetic mean RGB image
+
+        # HLS
+        hls = cv.cvtColor(rgb, cv.COLOR_RGB2HLS)
+        channels['h'] = hls[:,:,0]
+        channels['l'] = hls[:,:,1]
+        channels['s'] = hls[:,:,2]
+
+    else: # Input is already normalized -> Just copy input to channels!
+        channels = cs_prim.copy()
+
+    # Return parameters as dictionary
+    params = {}
+    params['blue_wavelength'] = 450
+    params['green_wavelength'] = 560
+    params['red_wavelength'] = 650
+    params['re_wavelength'] = 730
+    params['nir_wavelength'] = 840
+
+    params['downscale'] = downscale
+    params['px_width'] = params_cs_prim['px_width'] * 2**downscale
 
     # Optional resolution reduction by gaussian image pyramid
     if downscale == 0:
-        return channels, shape_in, shape_in
+        params['shape'] = params_cs_prim['shape']
     
     else:
         for key in channels:
@@ -314,7 +459,13 @@ def define_channels(channels_in, downscale=0):
             for i in range(downscale):
                 img = cv.pyrDown(img)
             channels[key] = img
-        
-        shape_out = channels[list(channels.keys())[0]].shape[:2]
-        
-        return channels, shape_in, shape_out
+        shape_sec = channels[list(channels.keys())[0]].shape[:2]
+        params['shape'] = shape_sec
+    
+    # Print parameters
+    if verbose:
+        print('-----------')
+        print('Parameters:')
+        for k in params: print(f"  {k:<30}: {params[k]}")
+
+    return channels, params

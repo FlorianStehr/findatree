@@ -16,7 +16,6 @@ import skimage.feature as feature
 
 import findatree.io as io
 
-
 #%%
 def scaler_percentile(img_in, percentile=0, mask=None, return_dtype='uint8'):
     '''

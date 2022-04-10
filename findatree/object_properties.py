@@ -216,10 +216,10 @@ def prop_to_all(prop, channels, px_width):
 
 #%%
 
-def labels_to_props_all(labels, channels_in, px_width, include_labels=None):
+def labels_to_props_all(labels, cs, params_cs, include_labels=None):
 
     # Copy input channels
-    channels = channels_in.copy()
+    channels = cs.copy()
 
     # Exlude RGB channel
     exclude_channels= ['RGB'] # RGB channel of shape (M,N,3) is excluded!
@@ -239,9 +239,9 @@ def labels_to_props_all(labels, channels_in, px_width, include_labels=None):
     for i, prop in enumerate(tqdm(props_include)):
         
         if i == 0: # First assignment
-            data, names = prop_to_all(prop, channels, px_width)
+            data, names = prop_to_all(prop, channels, params_cs['px_width'])
         else:
-            data_i, names = prop_to_all(prop, channels, px_width)
+            data_i, names = prop_to_all(prop, channels, params_cs['px_width'])
             data = np.vstack((data, data_i))
 
 
