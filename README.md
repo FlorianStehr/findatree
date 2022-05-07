@@ -1,6 +1,6 @@
 # findatree
 
-Package to indentify trees based on digital surface models (DSMs). Large parts are based on [GDAL](https://gdal.org/).
+Open-source object-based analysis of forrest health using drone data. 
 
 ## Installation
 
