@@ -1,6 +1,6 @@
 # findatree
 
-Open-source object-based analysis of forrest health using drone data. 
+Open-source object-based analysis of forest health using drone data. 
 
 ## Installation
 
