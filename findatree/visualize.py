@@ -52,6 +52,8 @@ def show_channels(
         Channel indices where ``mask == False`` will be set to 0. Must be of shape ``(m,n)``.
     bounds: np.ndarray(shape=(m,n), dtype=np.uint8)
         Binary image of segments.
+    show_bounds: List[bool, ...]
+        Show boundaries given by ``bound`` in corresponding channel.
     contrasts: List[Tuple, ...]
         List of tuples containing contrast lower and upper threshold for each channel (i.e. ``vmin``, ``vmax`` of matplotlib.pyplot.imshow()).
         Defaults to ``[(np.nanpercentile(c.flatten(), 5), np.nanpercentile(c.flatten(), 95)) for c in channels]`` after mask was applied.
@@ -91,6 +93,11 @@ def show_channels(
     else:
         bounds = kwargs['bounds'].astype(np.float32)
         bounds[bounds==0] = np.nan
+    #
+    if 'show_bounds' not in kwargs:
+        show_bounds = [True for i in range(len(channels))]
+    else:
+        show_bounds = kwargs['show_bounds']
     #
     if 'xylim' not in kwargs:
         xylim = [(s // 2 + 1, s // 2 + 1) for s in shape[::-1]] # (center, width)
@@ -145,6 +152,9 @@ def show_channels(
         )
     f.subplots_adjust(bottom=0.05, top=0.95, left=0, right=1, hspace=0.15, wspace=0)
 
+    if not isinstance(axs, np.ndarray): # Concert axis object to np.ndarray in all cases
+        axs = np.array([axs], dtype=object)
+    
     # Define random cmap
     vals = np.linspace(0.05,1,256)
     np.random.shuffle(vals)
@@ -162,6 +172,7 @@ def show_channels(
                 vmax = contrasts[i][1]
 
             if img.shape[-1] == 3: # Three channel images, e.g.RGB
+                vmin, vmax = _image_minmax(img,percentile=contrasts[i][0])
                 img = exposure.rescale_intensity(img, in_range=(vmin, vmax))
             
             if use_random_cmap[i]:
@@ -178,12 +189,13 @@ def show_channels(
                 vmax=vmax,
                 cmap=cmap,
             )
-            mapp = ax.imshow(
-                bounds,
-                vmin=0,
-                vmax=1,
-                cmap='Greys_r',
-            )
+            if show_bounds[i]:
+                mapp = ax.imshow(
+                    bounds,
+                    vmin=0,
+                    vmax=1,
+                    cmap='Greys_r',
+                )
 
             tick = 10 ** np.floor(np.log10(cmax - cmin))
             if ((cmax - cmin) / tick >= 1) & ((cmax - cmin) / tick <= 2):
@@ -198,7 +210,7 @@ def show_channels(
             ax.set_yticklabels(np.arange(rmin, rmax, tick, dtype=np.uint16))
 
             if (len(channel_names) == len(channels)):
-                ax.set_title(f"{channel_names[i]} [{vmin:.0e} - {vmax:.0e}]")
+                ax.set_title(f"{channel_names[i]}") # [{vmin:.0e} - {vmax:.0e}]")
             else:
                 ax.set_title(f"[{vmin:.0e} - {vmax:.0e}]")
 
