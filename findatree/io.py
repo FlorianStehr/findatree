@@ -1,5 +1,4 @@
-from typing import List
-from typing import Tuple
+from typing import Dict, List, Tuple
 import glob
 import re
 import os
@@ -15,7 +14,7 @@ from findatree import object_properties as objprops
 
 importlib.reload(objprops)
 
-
+   
 #%%
 def check_path(paths, pattern):
     if len(paths) == 0:
@@ -122,9 +121,9 @@ def print_raster_info(paths: List[str]) -> None:
             print(f"Geo bounds: {ds.bounds}")
             print(f"Affine geo-transfrom: {[val for val in ds.transform[:-3]]}")
 
-
+    
 #%%
-def reproject_all_intersect(paths: List[str], px_width: float, verbose: bool=True) -> Tuple:
+def reproject_all_intersect(paths: List[str], px_width: float, verbose: bool=True) -> Tuple[Dict, Dict]:
     '''
     Reproject all rasters in raster-files (.tif) given by ``paths`` to the intersection of all rasters and a defined resolution ``res`` using rasterio package.
     
@@ -134,22 +133,25 @@ def reproject_all_intersect(paths: List[str], px_width: float, verbose: bool=Tru
         Full path names to raster-files in order [``path_dsm``, ``path_dtm``, ``path_ortho``]
     resolution: float
         Resolution per px in final rasters.
+    verbose: bool, optional
+        Print function parameters, by default True
 
     Returns:
     -------
-    cs_prim: dict[np.ndarray,...]
-        Dictionary of reprojected rasters in intersection and with defined resolution ``resolution`` given as np.ndarray of dtype=np.float64.
-        Keys are: ['dsm', 'dtm', 'blue', 'green', 'red', 're', 'nir']
-    params: dict
-        * 'crs': Coordinate system of all reprojected rasters.
-        * 'px_width': Isotropic width per pixel in [m] of all reprojected rasters.
-        * 'shape': Shape  in [px] of images of all reprojected rasters.
-        * 'affine': Affine geo. transform of all reprojected rasters (see rasterio) as np.ndarray
-        * 'bound_left': Left boundary of intersection of all reprojected rasters (maximum).
-        * 'bound_bottom': Bottom boundary of intersection of all reprojected rasters (maximum).
-        * 'bound_right': Right boundary of intersection of all reprojected rasters (minimum).
-        * 'bound_top': Top boundary of intersection of all reprojected rasters (minimum).
-    
+    Tuple[Dict, Dict]
+        cs_prim: dict[np.ndarray,...]
+            Dictionary of reprojected rasters in intersection and with defined resolution ``resolution`` given as np.ndarray of dtype=np.float64.
+            Keys are: ['dsm', 'dtm', 'blue', 'green', 'red', 're', 'nir'].
+        params: dict
+        * crs [str]: Coordinate system of all reprojected rasters.
+        * affine [np.ndarray]: Affine geo. transform of all reprojected rasters (see rasterio) as np.ndarray
+        * px_width[float]: Isotropic width per pixel in [m] of all reprojected rasters.
+        * shape [Tuple]: Shape  in [px] of images of all reprojected rasters.
+        * bound_left [float]: Left boundary of intersection of all reprojected rasters (maximum).
+        * bound_bottom [float]: Bottom boundary of intersection of all reprojected rasters (maximum).
+        * bound_right [float]: Right boundary of intersection of all reprojected rasters (minimum).
+        * bound_top [float]: Top boundary of intersection of all reprojected rasters (minimum).
+
     Notes:
     -----
     * Besides bounding box also the masks of all rasters are extracted and the interesction mask (``dest_mask``) is computed.
@@ -287,14 +289,14 @@ def reproject_all_intersect(paths: List[str], px_width: float, verbose: bool=Tru
     
     # Return reprojection parameters as dictionary
     params = {}
-    params['crs'] = dest_crs
+    params['crs'] = str(dest_crs)
     params['affine'] = np.array(dest_A).reshape((3,3))
     params['px_width'] = px_width
     params['shape'] = dest_shape
-    params['bound_left'] = inter_bound['left']
-    params['bound_bottom'] = inter_bound['bottom']
-    params['bound_right'] = inter_bound['right']
-    params['bound_top'] = inter_bound['top']
+    params['bound_left'] = float(inter_bound['left'])
+    params['bound_bottom'] = float(inter_bound['bottom'])
+    params['bound_right'] = float(inter_bound['right'])
+    params['bound_top'] = float(inter_bound['top'])
 
     # Print parameters
     if verbose:
@@ -391,10 +393,37 @@ def _close_nan_holes(img: np.ndarray, max_pxs: int = 200) -> np.ndarray:
 
 #%%
 
-def channels_primary_to_secondary(cs_prim, params_cs_prim, downscale=0, verbose=True):
-    '''
-    Normalize channels, convert to ``numpy.float32`` dtype and optionally reduce by using gaussian image pyramids
-    '''
+def channels_primary_to_secondary(cs_prim, params_cs_prim, downscale=0, verbose=True) -> Tuple[Dict, Dict]:
+    """channels_primary_to_secondary _summary_
+
+    Parameters
+    ----------
+    cs_prim : _type_
+        Dictionary of of primary channels as np.ndarray of dtype=np.float64, see io.reproject_all_intersect().
+    params_cs_prim : _type_
+        Dictionary of parameters of primary channels, see io.reproject_all_intersect().
+    downscale : int, optional
+        Pixel downscale factor, by default 0
+    verbose : bool, optional
+        Print parameters during call, by default True
+
+    Returns
+    -------
+    Tuple[Dict, Dict]
+        channels: Dict[np.ndarray, ...]
+            Dict. of all normalized primary/sesondary channels as np.ndarray of type np.float32.
+            Keys are: ['blue', 'green', 'red', 're', 'nir', 'chm', 'ndvi', 'ndvire', 'ndre', 'RGB', 'rgb', 'h', 'l', 's'].
+            
+        params: Dict
+        * blue_wavelength [int]: Wavelength of ... channel
+        * green_wavelength [int]: Wavelength of ... channel
+        * red_wavelength [int]: Wavelength of ... channel
+        * re_wavelength [int]: Wavelength of ... channel
+        * nir_wavelength [int]: Wavelength of ... channel
+        * downscale [int]: Downscale factor of pixel size, by default 0.
+        * px_width [float]: Final pixel width in meters.
+        * shape [Tuple]: Final shape of image in pixels.
+    """
     cs_prim_names = list(cs_prim.keys())
     shape_prim = params_cs_prim['shape']
     
