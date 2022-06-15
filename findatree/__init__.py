@@ -5,7 +5,6 @@
     :authors: Stehr Florian
 
 '''
-
 import os
 
 _this_file = os.path.abspath(__file__)  # Absolute path to __init__.py

@@ -2,6 +2,8 @@ from typing import Dict, List, Tuple
 import glob
 import re
 import os
+import time
+import h5py
 import numpy as np
 import importlib
 import rasterio
@@ -10,39 +12,91 @@ import cv2 as cv
 import skimage.measure as measure
 import skimage.exposure as exposure
 
+# Import findatree modules
 from findatree import object_properties as objprops
-
 importlib.reload(objprops)
 
-   
+
+
 #%%
-def check_path(paths, pattern):
+def check_path(paths: List[str], pattern: str, verbose:bool=False) -> str:
+    """Returns unique path that matches pattern.
+
+    Parameters
+    ----------
+    paths : List[str]
+        List of paths to be checked for pattern.
+    pattern : str
+        Pattern to be checked in paths.
+    verbose : bool, optional
+        Print parameters during call, by default False.
+    Returns
+    -------
+    str
+        Unique path that matches pattern.
+        If more than one path is found only first path is returned.
+        If none is found `None` is returned.
+    """
+
     if len(paths) == 0:
         path = None
-        print('0 '+ pattern + 's found in given directories!!!')
-        print('  -> Returning ' + pattern + ': ' + 'None')
+        if verbose:
+            print('0 '+ pattern + 's found in given directories!!!')
+            print('  -> Returning ' + pattern + ': ' + 'None')
     elif len(paths) == 1:
         path = paths[0]
-        print('1 '+ pattern + 's found in given directories, OK.')
-        print('  -> Returning ' + pattern + ': ' + os.path.split(path)[-1])
+        if verbose:
+            print('1 '+ pattern + 's found in given directories, OK.')
+            print('  -> Returning ' + pattern + ': ' + os.path.split(path)[-1])
 
     else:
         path = paths[0]
-        print(str(len(paths))+ ' ' + pattern + 's found in given directories!!!')
-        print('  -> Returning ' + pattern + ': ' + os.path.split(path)[-1])
+        if verbose:
+            print(str(len(paths))+ ' ' + pattern + 's found in given directories!!!')
+            print('  -> Returning ' + pattern + ': ' + os.path.split(path)[-1])
     
     return path
 
 #%%
 def find_paths_in_dirs(
-    dir_names,
-    tnr_number=None,
-    verbose=True,
-    filetype_pattern = '*.tif',
-    dsm_pattern = 'dsm',
-    dtm_pattern = 'dtm',
-    ortho_pattern = 'ortho',
-    ):
+    dir_names: List[str],
+    tnr_number: int=None,
+    filetype_pattern: str= '*.tif',
+    dsm_pattern: str= 'dsm',
+    dtm_pattern: str = 'dtm',
+    ortho_pattern: str = 'ortho',
+    verbose: bool=True,
+    ) -> Tuple[List[str,],Dict]:
+    """Find dsm, dtm and ortho rasters in directories and return full unique paths and params.
+
+    Parameters
+    ----------
+    dir_names : List[str]
+        List of absolute paths to all folders containing the necessary dsm, dtm and ortho rasters.
+    tnr_number : int, optional
+        Area number to be loaded. If `None` all area numbers are shown, by default `None`.
+    filetype_pattern : str, optional
+        Filetype pattern to be matched for rasters, by default '*.tif'
+    dsm_pattern : str, optional
+        dsm file pattern to be matched for rasters, by default 'dsm'
+    dtm_pattern : str, optional
+        dtm file pattern to be matched for rasters, by default 'dtm'
+    ortho_pattern : str, optional
+        ortho file pattern to be matched for rasters, by default 'ortho'
+    verbose : bool, optional
+        Print parameters during call, by default True.
+
+    Returns
+    -------
+    Tuple[List[str,],Dict]
+        paths: List[str]
+            List to paths of unique dsm, dtm and ortho files.
+        params: Dict
+        * tnr [int]: Area number
+        * path_dsm [str]: Absolute path to dsm raster
+        * path_dtm [str]: Absolute path to dtm raster
+        * path_ortho [str]: Absolute path to ortho raster
+    """
 
     # Get full paths to all files that match ``filetype_pattern`` in all directories
     paths = []
@@ -97,11 +151,16 @@ def find_paths_in_dirs(
 
     return paths, params
 
+#%%
 ##%%
 def print_raster_info(paths: List[str]) -> None:
-    '''
-    Quickly print some information about .tif geo-raster-file defined by paths.
-    '''
+    """Quickly print some information about .tif geo-raster-file defined by paths.
+
+    Parameters
+    ----------
+    paths : List[str]
+        List of absolute paths to raster files.
+    """
     for i, path in enumerate(paths):
         with rasterio.open(path) as ds:
             print()
@@ -124,8 +183,7 @@ def print_raster_info(paths: List[str]) -> None:
     
 #%%
 def reproject_all_intersect(paths: List[str], px_width: float, verbose: bool=True) -> Tuple[Dict, Dict]:
-    '''
-    Reproject all rasters in raster-files (.tif) given by ``paths`` to the intersection of all rasters and a defined resolution ``res`` using rasterio package.
+    """Reproject all rasters in raster-files (.tif) given by ``paths`` to the intersection of all rasters and a defined resolution ``res`` using rasterio package.
     
     Parameters:
     ----------
@@ -158,7 +216,7 @@ def reproject_all_intersect(paths: List[str], px_width: float, verbose: bool=Tru
     * All values outside of intersection mask are assigned with numpy.nan values.
     * All fully saturated values for specific dtype of original rasters are assigned with numpy.nan values.
 
-    '''
+    """
     # Load bounds and CRSs of all raster-files
     bounds = []
     crss = []
@@ -309,9 +367,8 @@ def reproject_all_intersect(paths: List[str], px_width: float, verbose: bool=Tru
 
 #%%
 
-def _close_nan_holes(img: np.ndarray, max_pxs: int = 200) -> np.ndarray:
-    '''
-    Close small NaN holes in image with medium value of surroundings.
+def _close_nan_holes(img: np.ndarray, max_pxs: int = 200) -> Tuple[np.ndarray, np.ndarray]:
+    """Close small NaN holes in image with medium value of surroundings.
 
     Paramaters:
     -----------
@@ -322,14 +379,12 @@ def _close_nan_holes(img: np.ndarray, max_pxs: int = 200) -> np.ndarray:
 
     Returns:
     -------
-    img_closed:
-        Copy of original image with closed NaN holes.
-    mask:
-        Mask with: 
-            * NaN-holes -> 1 
-            * Surrounding -> 2
-            * All other -> 0
-    '''
+    Tuple[np.ndarray, np.ndarray]
+        img_closed: np.ndarray
+            Copy of original image with closed NaN holes.
+        mask:
+            Mask with: NaN-holes = 1, Surrounding = 2, All other = 0.
+    """
 
     # Init return image
     img_closed = img.copy()
@@ -477,6 +532,9 @@ def channels_primary_to_secondary(cs_prim, params_cs_prim, downscale=0, verbose=
 
     params['downscale'] = downscale
     params['px_width'] = params_cs_prim['px_width'] * 2**downscale
+    params['affine'] = params_cs_prim['affine']
+    params['affine'][0,0] = params['px_width']
+    params['affine'][1,1] = - params['px_width']
 
     # Optional resolution reduction by gaussian image pyramid
     if downscale == 0:
@@ -498,3 +556,114 @@ def channels_primary_to_secondary(cs_prim, params_cs_prim, downscale=0, verbose=
         for k in params: print(f"  {k:<30}: {params[k]}")
 
     return channels, params
+
+
+#%%
+def load_channels(
+    dir_names: List[str],
+    params: Dict,
+    dir_name_save: str=r'C:\Data\lwf\processed',
+    verbose: bool=True) -> Tuple[Dict, Dict]:
+    """Reproject dsm, dtm and ortho rasters to of same area code to same intersection and resolution and convert/normalize to secondary channels.
+
+    Parameters
+    ----------
+    dir_names : List[str]
+        List of absolute paths to all folders containing the necessary dsm, dtm and ortho rasters.
+    params : Dict
+        * px_width [float]: Reprojection pixel width in meters, by default 0.2.
+        * downscale [int]: Additionaly downscale px_width after reprojection by factor `2**(downscale)` using gaussian image pyramids.
+    dir_name_save: str
+        Path to directory where reprojected and normalized channels & parameters are saved in .hdf5 format.
+    verbose : bool, optional
+        Print parameters during call, by default True.
+
+    Returns
+    -------
+    Tuple[Dict, Dict]
+        _description_
+    """
+    ######################################### (0) Set standard settings if not set
+    params_standard = {
+        'tnr': None,
+        'px_width_reproject': 0.2,
+        'downscale': 0,
+    }
+    for k in params_standard:
+        if k in params:
+            params[k] = params[k]
+        else:
+            params[k] = params_standard[k]
+
+
+    ######################################### (1) Function calls
+    # Find paths to dsm, dtm, ortho rasters of same area code
+    paths, params_paths = find_paths_in_dirs(dir_names, tnr_number=params['tnr'], verbose=False)   
+    
+    # Reproject dsm, dtm, ortho rasters to same resolution and intersection -> primary channels
+    channels_prim, params_prim = reproject_all_intersect(paths, px_width=params['px_width_reproject'], verbose=False)
+    
+    # Optionally downscale primary channels and convert/normalize to secondary channels
+    channels, params_sec = channels_primary_to_secondary(channels_prim, params_prim, downscale=params['downscale'], verbose=False)
+
+    ######################################### (2) Prepare parameters
+    # Add all path params to final params
+    for key in params_paths:
+        params[key] = params_paths[key]
+    
+    # Add date of processing to params
+    date_time = time.strftime('%Y%m%d-%H%M%S', time.localtime())
+    date_time = date_time[2:]
+    params['date_time'] = date_time
+
+    # Add missing geo-referencing params
+    params['crs'] = params_prim['crs']
+    params['affine'] = params_sec['affine']
+    params['px_width'] = params_sec['px_width']
+    params['shape'] = params_sec['shape']
+    
+    # Sort params thematically
+    key_order = ['date_time', 'tnr', 'path_dsm', 'path_dtm', 'path_ortho', 'crs', 'px_width_reproject', 'downscale', 'px_width', 'shape', 'affine']
+    params = {k: params[k] for k in key_order}
+
+    # Print parameters
+    if verbose:
+        print('-----------')
+        print('Parameters:')
+        for k in params: print(f"  {k:<30}: {params[k]}")
+    
+    ######################################### (3) Save parameters and channels
+    # Define save name
+    name_save = f"tnr{params['tnr']}.hdf5"
+    path_save = os.path.join(dir_name_save, name_save)
+
+    # Save
+    save_channels(path_save, channels, params)
+
+    return channels, params
+
+
+#%%
+def save_channels(path: str, channels: Dict , params_channels: Dict) -> None:
+    
+    # Open file for writing if exists, create otherwise.
+    with h5py.File(path, 'a') as f:
+        
+        # Get pinter to 'channels' group if it does exist, otherwise create 'channels' group.
+        if 'channels' in f:
+            grp = f.get('channels')
+        else:
+            grp = f.create_group('channels')
+        
+        # Update all parameters as group attributes
+        for key in params_channels:
+            grp.attrs[key] = params_channels[key]
+
+        # Add/update all channel as group datasets
+        for key in channels:
+            if key in grp:
+                del grp[key]
+                grp.create_dataset(key, data=channels[key])
+            else:
+                dset = grp.create_dataset(key, data=channels[key])
+        pass

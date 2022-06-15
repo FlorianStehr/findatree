@@ -20,8 +20,7 @@ importlib.reload(io)
 
 #%%
 def local_thresholding(img_in, mask, width, px_width, blur=True):
-    '''
-    Local gaussian thresholding of image.
+    '''Local gaussian thresholding of image.
     '''
     # Set everything outside global mask to 0
     img = img_in.copy()
@@ -225,7 +224,6 @@ def main(
         * water_hole_min_area [float]: Remove holes smaller than this threshold in meters^2 from local mask before generating markers by use of distance transform, by default 0..
         * water_peak_dist [float]: Minimum peak distance in meters between local maxima of distance transform of local mask, by default 1.2.
         * water_label_min_area [float]: Labels smaller than this value in meters^2 are removed and relabeling is performed, by default 0.2.
-
     verbose : bool, optional
         Print parameters during call, by default True.
 
