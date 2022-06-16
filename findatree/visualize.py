@@ -172,7 +172,7 @@ def show_channels(
                 vmax = contrasts[i][1]
 
             if img.shape[-1] == 3: # Three channel images, e.g.RGB
-                vmin, vmax = _image_minmax(img,percentile=contrasts[i][0])
+                vmin, vmax = _image_minmax(img, percentile=contrasts[i][0])
                 img = exposure.rescale_intensity(img, in_range=(vmin, vmax))
             
             if use_random_cmap[i]:
