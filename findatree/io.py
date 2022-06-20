@@ -17,142 +17,7 @@ from findatree import object_properties as objprops
 importlib.reload(objprops)
 
 
-
 #%%
-def check_path(paths: List[str], pattern: str, verbose:bool=False) -> str:
-    """Returns unique path that matches pattern.
-
-    Parameters
-    ----------
-    paths : List[str]
-        List of paths to be checked for pattern.
-    pattern : str
-        Pattern to be checked in paths.
-    verbose : bool, optional
-        Print parameters during call, by default False.
-    Returns
-    -------
-    str
-        Unique path that matches pattern.
-        If more than one path is found only first path is returned.
-        If none is found `None` is returned.
-    """
-
-    if len(paths) == 0:
-        path = None
-        if verbose:
-            print('0 '+ pattern + 's found in given directories!!!')
-            print('  -> Returning ' + pattern + ': ' + 'None')
-    elif len(paths) == 1:
-        path = paths[0]
-        if verbose:
-            print('1 '+ pattern + 's found in given directories, OK.')
-            print('  -> Returning ' + pattern + ': ' + os.path.split(path)[-1])
-
-    else:
-        path = paths[0]
-        if verbose:
-            print(str(len(paths))+ ' ' + pattern + 's found in given directories!!!')
-            print('  -> Returning ' + pattern + ': ' + os.path.split(path)[-1])
-    
-    return path
-
-#%%
-def find_paths_in_dirs(
-    dir_names: List[str],
-    tnr_number: int=None,
-    filetype_pattern: str= '*.tif',
-    dsm_pattern: str= 'dsm',
-    dtm_pattern: str = 'dtm',
-    ortho_pattern: str = 'ortho',
-    verbose: bool=True,
-    ) -> Tuple[List[str,],Dict]:
-    """Find dsm, dtm and ortho rasters in directories and return full unique paths and params.
-
-    Parameters
-    ----------
-    dir_names : List[str]
-        List of absolute paths to all folders containing the necessary dsm, dtm and ortho rasters.
-    tnr_number : int, optional
-        Area number to be loaded. If `None` all area numbers are shown, by default `None`.
-    filetype_pattern : str, optional
-        Filetype pattern to be matched for rasters, by default '*.tif'
-    dsm_pattern : str, optional
-        dsm file pattern to be matched for rasters, by default 'dsm'
-    dtm_pattern : str, optional
-        dtm file pattern to be matched for rasters, by default 'dtm'
-    ortho_pattern : str, optional
-        ortho file pattern to be matched for rasters, by default 'ortho'
-    verbose : bool, optional
-        Print parameters during call, by default True.
-
-    Returns
-    -------
-    Tuple[List[str,],Dict]
-        paths: List[str]
-            List to paths of unique dsm, dtm and ortho files.
-        params: Dict
-        * tnr [int]: Area number
-        * path_dsm [str]: Absolute path to dsm raster
-        * path_dtm [str]: Absolute path to dtm raster
-        * path_ortho [str]: Absolute path to ortho raster
-    """
-
-    # Get full paths to all files that match ``filetype_pattern`` in all directories
-    paths = []
-    for dir_name in dir_names:
-            path = sorted(glob.glob( os.path.join( dir_name,filetype_pattern) ) )
-            paths.extend(path)
-
-    # ``tnr_number`` to pattern 
-    if tnr_number is None:
-        print('No tnr found, displaying all available ' + filetype_pattern + 's:')
-        for p in paths: print('  ' + p)
-        print()
-
-    tnr_number = str(tnr_number)
-    tnr_pattern = 'tnr_' + tnr_number
-
-    # Get paths that contain ``tnr_number``
-    paths = [p for p in paths if bool(re.search(tnr_pattern, os.path.split(p)[-1], re.IGNORECASE))]
-
-    # Get path that contains non-case sensitive ``dsm_pattern``
-    paths_dsm = [p for p in paths if bool(re.search(dsm_pattern, os.path.split(p)[-1], re.IGNORECASE))]
-    path_dsm = check_path(paths_dsm, dsm_pattern)
-
-    # Get path that contains non-case sensitive ``dtm_pattern``
-    paths_dtm = [p for p in paths if bool(re.search(dtm_pattern, os.path.split(p)[-1], re.IGNORECASE))]
-    path_dtm = check_path(paths_dtm, dtm_pattern)
-
-    # Get path that contains non-case sensitive ``ortho_pattern``
-    paths_ortho = [p for p in paths if bool(re.search(ortho_pattern, os.path.split(p)[-1], re.IGNORECASE))]
-    path_ortho = check_path(paths_ortho, ortho_pattern)
-
-    # Join dsm/dtm/ortho paths
-    paths = [
-        path_dsm,
-        path_dtm,
-        path_ortho,
-    ]
-
-    params = {
-        'tnr': tnr_number,
-        'path_dsm': paths[0],
-        'path_dtm': paths[1],
-        'path_ortho': paths[2],
-    }
-
-    # Print parameters
-    if verbose:
-        print('-----------')
-        print('Parameters:')
-        for k in params: print(f"  {k:<30}: {params[k]}")
-
-
-    return paths, params
-
-#%%
-##%%
 def print_raster_info(paths: List[str]) -> None:
     """Quickly print some information about .tif geo-raster-file defined by paths.
 
@@ -180,15 +45,106 @@ def print_raster_info(paths: List[str]) -> None:
             print(f"Geo bounds: {ds.bounds}")
             print(f"Affine geo-transfrom: {[val for val in ds.transform[:-3]]}")
 
+
+#%%
+def _find_paths_in_dirs(
+    dir_names: List[str],
+    tnr_number: int=None,
+    filetype_pattern: str= '*.tif',
+    dsm_pattern: str= 'dsm',
+    dtm_pattern: str = 'dtm',
+    ortho_pattern: str = 'ortho',
+    verbose: bool=True,
+    ) -> Dict:
+    """Find dsm, dtm and ortho rasters in directories and return full unique paths and params.
+
+    Parameters
+    ----------
+    dir_names : List[str]
+        List of absolute paths to all folders containing the necessary dsm, dtm and ortho rasters.
+    tnr_number : int, optional
+        Area number to be loaded. If `None` all area numbers are shown, by default `None`.
+    filetype_pattern : str, optional
+        Filetype pattern to be matched for rasters, by default '*.tif'
+    dsm_pattern : str, optional
+        dsm file pattern to be matched for rasters, by default 'dsm'
+    dtm_pattern : str, optional
+        dtm file pattern to be matched for rasters, by default 'dtm'
+    ortho_pattern : str, optional
+        ortho file pattern to be matched for rasters, by default 'ortho'
+    verbose : bool, optional
+        Print parameters during call, by default True.
+
+    Returns
+    -------
+    Tuple[List[str,],Dict]
+        paths_dict: Dict
+        * tnr [int]: Area number
+        * path_dsm [str]: Absolute path to dsm raster
+        * path_dtm [str]: Absolute path to dtm raster
+        * path_ortho [str]: Absolute path to ortho raster
+    """
+
+    # Get full paths to all files that match ``filetype_pattern`` in all directories
+    paths = []
+    for dir_name in dir_names:
+            path = sorted(glob.glob( os.path.join( dir_name,filetype_pattern) ) )
+            paths.extend(path)
+
+    # ``tnr_number`` to pattern 
+    if tnr_number is None:
+        print('No tnr found, displaying all available ' + filetype_pattern + 's:')
+        for p in paths: print('  ' + p)
+        print()
+
+    tnr_number = str(tnr_number)
+    tnr_pattern = 'tnr_' + tnr_number
+
+    # Get paths that contain ``tnr_number``
+    paths = [p for p in paths if bool(re.search(tnr_pattern, os.path.split(p)[-1], re.IGNORECASE))]
+
+    # Get path that contains non-case sensitive ``dsm_pattern``
+    paths_dsm = [p for p in paths if bool(re.search(dsm_pattern, os.path.split(p)[-1], re.IGNORECASE))]
+
+    # Get path that contains non-case sensitive ``dtm_pattern``
+    paths_dtm = [p for p in paths if bool(re.search(dtm_pattern, os.path.split(p)[-1], re.IGNORECASE))]
+
+    # Get path that contains non-case sensitive ``ortho_pattern``
+    paths_ortho = [p for p in paths if bool(re.search(ortho_pattern, os.path.split(p)[-1], re.IGNORECASE))]
+
+    # Assert that there is only one valid dsm, dtm and ortho file 
+    assert len(paths_dsm) == 1, f"No file or more than one file with pattern `{dsm_pattern}` found in given directories"
+    assert len(paths_dtm) == 1, f"No file or more than one file with pattern `{dtm_pattern}` found in given directories"
+    assert len(paths_ortho) == 1, f"No file or more than one file with pattern `{ortho_pattern}` found in given directories"
+
+    # Join tnr number and dsm/dtm/ortho paths
+    paths_dict = {
+        'tnr': tnr_number,
+        'path_dsm': paths_dsm[0],
+        'path_dtm': paths_dtm[0],
+        'path_ortho': paths_ortho[0],
+    }
+
+    # Print parameters
+    if verbose:
+        print('-----------')
+        print('Parameters:')
+        for k in paths_dict: print(f"  {k:<30}: {paths_dict[k]}")
+
+
+    return paths_dict
+
     
 #%%
-def reproject_all_intersect(paths: List[str], px_width: float, verbose: bool=True) -> Tuple[Dict, Dict]:
-    """Reproject all rasters in raster-files (.tif) given by ``paths`` to the intersection of all rasters and a defined resolution ``res`` using rasterio package.
+def _reproject_to_primary(paths_dict: Dict, px_width: float, verbose: bool=True) -> Tuple[Dict, Dict]:
+    """Reproject all rasters in dsm, dtm and ortho raster-files given by `paths` to the intersection of all rasters with same resolution given by `px_width` using rasterio package.
     
+    We refer to these reprojected raster files as primary channels.
+
     Parameters:
     ----------
-    paths: List[str]
-        Full path names to raster-files in order [``path_dsm``, ``path_dtm``, ``path_ortho``]
+    paths_dict: Dict
+        Dictionary of full path names to raster-files containing keys `path_dsm`, `path_dtm`, `path_ortho`, see findatree.io._find_paths_in_dirs()
     resolution: float
         Resolution per px in final rasters.
     verbose: bool, optional
@@ -198,7 +154,7 @@ def reproject_all_intersect(paths: List[str], px_width: float, verbose: bool=Tru
     -------
     Tuple[Dict, Dict]
         cs_prim: dict[np.ndarray,...]
-            Dictionary of reprojected rasters in intersection and with defined resolution ``resolution`` given as np.ndarray of dtype=np.float64.
+            Dictionary of reprojected rasters, i.e. primary channels, in intersection and with defined resolution given by `px_width` given as np.ndarray of dtype=np.float64.
             Keys are: ['dsm', 'dtm', 'blue', 'green', 'red', 're', 'nir'].
         params: dict
         * crs [str]: Coordinate system of all reprojected rasters.
@@ -217,6 +173,9 @@ def reproject_all_intersect(paths: List[str], px_width: float, verbose: bool=Tru
     * All fully saturated values for specific dtype of original rasters are assigned with numpy.nan values.
 
     """
+    # Convert paths_dict to list of paths in correct order
+    paths = [paths_dict['path_dsm'], paths_dict['path_dtm'], paths_dict['path_ortho']]
+
     # Load bounds and CRSs of all raster-files
     bounds = []
     crss = []
@@ -448,15 +407,15 @@ def _close_nan_holes(img: np.ndarray, max_pxs: int = 200) -> Tuple[np.ndarray, n
 
 #%%
 
-def channels_primary_to_secondary(cs_prim, params_cs_prim, downscale=0, verbose=True) -> Tuple[Dict, Dict]:
+def _channels_primary_to_secondary(cs_prim, params_cs_prim, downscale=0, verbose=True) -> Tuple[Dict, Dict]:
     """Normalize/convert reprojected rasters (primary channels) to secondary channels with possible downscaling of final resolution by using gaussian image pyramids.
 
     Parameters
     ----------
     cs_prim : _type_
-        Dictionary of of primary channels as np.ndarray of dtype=np.float64, see io.reproject_all_intersect().
+        Dictionary of of primary channels as np.ndarray of dtype=np.float64, see io._reproject_all_intersect().
     params_cs_prim : _type_
-        Dictionary of parameters of primary channels, see io.reproject_all_intersect().
+        Dictionary of parameters of primary channels, see io._reproject_all_intersect().
     downscale : int, optional
         Pixel downscale factor by using gaussian image pyramids, by default 0.
     verbose : bool, optional
@@ -582,18 +541,19 @@ def channels_primary_to_secondary(cs_prim, params_cs_prim, downscale=0, verbose=
 
 
 #%%
-def load_channels(
+def channels_load_and_save(
     dir_names: List[str],
     params: Dict,
     dir_name_save: str=r'C:\Data\lwf\processed',
     verbose: bool=True,
-    ) -> Tuple[Dict, Dict, str]:
+    ) -> Tuple[Dict, Dict]:
     """Reproject dsm, dtm and ortho rasters to of same area code to same intersection and resolution and convert/normalize to secondary channels and save to .hdf5.
 
     This function combines:
-    * findatree.io.reproject_all_intersect()
-    * findatree.io.channels_primary_to_secondary() 
-    * findatree.io.save_channels()
+    * findatree.io._find_paths_in_dirs()
+    * findatree.io._reproject_to_primary()
+    * findatree.io._channels_primary_to_secondary() 
+    * findatree.io._channels_to_hdf5()
 
     Parameters
     ----------
@@ -642,18 +602,18 @@ def load_channels(
 
     ######################################### (1) Function calls
     # Find paths to dsm, dtm, ortho rasters of same area code
-    paths, params_paths = find_paths_in_dirs(dir_names, tnr_number=params['tnr'], verbose=False)   
+    paths_dict = _find_paths_in_dirs(dir_names, tnr_number=params['tnr'], verbose=False)   
     
     # Reproject dsm, dtm, ortho rasters to same resolution and intersection -> primary channels
-    channels_prim, params_prim = reproject_all_intersect(paths, px_width=params['px_width_reproject'], verbose=False)
+    channels_prim, params_prim = _reproject_to_primary(paths_dict, px_width=params['px_width_reproject'], verbose=False)
     
     # Optionally downscale primary channels and convert/normalize to secondary channels
-    channels, params_sec = channels_primary_to_secondary(channels_prim, params_prim, downscale=params['downscale'], verbose=False)
+    channels, params_sec = _channels_primary_to_secondary(channels_prim, params_prim, downscale=params['downscale'], verbose=False)
 
     ######################################### (2) Prepare parameters
     # Add all path params to final params
-    for key in params_paths:
-        params[key] = params_paths[key]
+    for key in paths_dict:
+        params[key] = paths_dict[key]
     
     # Add date of processing to params
     date_time = time.strftime('%Y%m%d-%H%M%S', time.localtime())
@@ -682,13 +642,13 @@ def load_channels(
     path_save = os.path.join(dir_name_save, name_save)
 
     # Save
-    save_channels(path_save, channels, params)
+    _channels_to_hdf5(path_save, channels, params)
 
     return channels, params
 
 
 #%%
-def save_channels(path: str, channels: Dict , params_channels: Dict) -> None:
+def _channels_to_hdf5(path: str, channels: Dict , params_channels: Dict) -> None:
     """Save all secondary channels in .hdf5 container.
 
     Group `channels` wil be created in .hdf5 with `channels` as datasets and `params_channels` as group attributes.
@@ -705,6 +665,7 @@ def save_channels(path: str, channels: Dict , params_channels: Dict) -> None:
     params_channels : Dict
         Same as `params` as defined in io.findatree.load_channels().
     """
+   
     # Open file for writing if exists, create otherwise.
     with h5py.File(path, 'a') as f:
         '''Three possible cases to cover:
