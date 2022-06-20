@@ -449,7 +449,7 @@ def _close_nan_holes(img: np.ndarray, max_pxs: int = 200) -> Tuple[np.ndarray, n
 #%%
 
 def channels_primary_to_secondary(cs_prim, params_cs_prim, downscale=0, verbose=True) -> Tuple[Dict, Dict]:
-    """channels_primary_to_secondary _summary_
+    """Normalize/convert reprojected rasters (primary channels) to secondary channels with possible downscaling of final resolution by using gaussian image pyramids.
 
     Parameters
     ----------
@@ -458,9 +458,9 @@ def channels_primary_to_secondary(cs_prim, params_cs_prim, downscale=0, verbose=
     params_cs_prim : _type_
         Dictionary of parameters of primary channels, see io.reproject_all_intersect().
     downscale : int, optional
-        Pixel downscale factor, by default 0
+        Pixel downscale factor by using gaussian image pyramids, by default 0.
     verbose : bool, optional
-        Print parameters during call, by default True
+        Print parameters during call, by default True.
 
     Returns
     -------
@@ -476,8 +476,31 @@ def channels_primary_to_secondary(cs_prim, params_cs_prim, downscale=0, verbose=
         * re_wavelength [int]: Wavelength of ... channel
         * nir_wavelength [int]: Wavelength of ... channel
         * downscale [int]: Downscale factor of pixel size, by default 0.
-        * px_width [float]: Final pixel width in meters.
+        * px_width [float]: Final pixel width in meters after downscaling.
         * shape [Tuple]: Final shape of image in pixels.
+
+    Notes:
+    ------
+    Primary channels are:
+    * dsm
+    * dtm
+    * ortho: blue, green, red, re, nir
+
+    Secondary channels are:
+    blue, green, red, re, nir, chm, ndvi, ndvire, ndre, RGB, rgb, h, l, s
+
+    Normalization:
+    * blue, green, red, re, nir: `[0,1]`
+    * chm: `dsm - dtm` 
+    * ndvi: `(nir - red) / (nir + red)` in `[-1, 1]`
+    * ndvire: `(re - red) / (re + red)` in `[-1, 1]`
+    * ndre: `(nir - re) / (nir + re)` in `[-1, 1]`
+    * RGB: `(red, green, blue)` RGB image `[0,1]` for each color dimension
+    * rgb: `mean(RGB)` in `[0, 1]`
+    * h: Hue of hls color space in `[0, 360]`
+    * l: Lightness of hls color space in `[0, 1]`
+    * s: Saturation of hls color space in `[0, 1]`
+
     """
     cs_prim_names = list(cs_prim.keys())
     shape_prim = params_cs_prim['shape']
@@ -563,8 +586,14 @@ def load_channels(
     dir_names: List[str],
     params: Dict,
     dir_name_save: str=r'C:\Data\lwf\processed',
-    verbose: bool=True) -> Tuple[Dict, Dict]:
-    """Reproject dsm, dtm and ortho rasters to of same area code to same intersection and resolution and convert/normalize to secondary channels.
+    verbose: bool=True,
+    ) -> Tuple[Dict, Dict, str]:
+    """Reproject dsm, dtm and ortho rasters to of same area code to same intersection and resolution and convert/normalize to secondary channels and save to .hdf5.
+
+    This function combines:
+    * findatree.io.reproject_all_intersect()
+    * findatree.io.channels_primary_to_secondary() 
+    * findatree.io.save_channels()
 
     Parameters
     ----------
@@ -581,7 +610,22 @@ def load_channels(
     Returns
     -------
     Tuple[Dict, Dict]
-        _description_
+        channels: Dict[np.ndarray, ...]
+            Dict. of all normalized secondary channels as np.ndarray of type np.float32 (see findatree.io.channels_primary_to_secondary()).
+            Keys are: ['blue', 'green', 'red', 're', 'nir', 'chm', 'ndvi', 'ndvire', 'ndre', 'RGB', 'rgb', 'h', 'l', 's'].
+        params: Dict
+        * date_time [str]: Processing date and time
+        * tnr [int]: Area number
+        * path_dsm [str]: Absolute path to dsm raster
+        * path_dtm [str]: Absolute path to dtm raster
+        * path_ortho [str]: Absolute path to ortho raster
+        * crs [str]: Coordinate system of all reprojected rasters. 
+        * px_width_reproject[float]: Isotropic width per pixel in [m] of all reprojected rasters, i.e. primary channels.
+        * downscale [int]: Downscale factor of pixel size by uisng gaussian image pyramids, by default 0.
+        * px_width[float]: Isotropic width per pixel in [m] of all secondary (downscaled) channels.
+        * shape [Tuple]: Final shape  in [px] of all secondary channels.
+        * affine [np.ndarray]: Affine geo. transform of all of secondary channels (see rasterio) as np.ndarray.
+
     """
     ######################################### (0) Set standard settings if not set
     params_standard = {
@@ -645,13 +689,37 @@ def load_channels(
 
 #%%
 def save_channels(path: str, channels: Dict , params_channels: Dict) -> None:
-    
+    """Save all secondary channels in .hdf5 container.
+
+    Group `channels` wil be created in .hdf5 with `channels` as datasets and `params_channels` as group attributes.
+    If .hdf5 already exists and dsm, dtm and ortho paths did not change the file is overwritten, otherwise an error is raised.
+
+    Parameters
+    ----------
+    path : str
+        Full path to directory were .hdf5 is created/overwitten
+    channels : Dict
+        channels: Dict[np.ndarray, ...]
+            Dict. of all normalized secondary channels as np.ndarray of type np.float32 (see findatree.io.channels_primary_to_secondary()).
+            Keys are: ['blue', 'green', 'red', 're', 'nir', 'chm', 'ndvi', 'ndvire', 'ndre', 'RGB', 'rgb', 'h', 'l', 's'].
+    params_channels : Dict
+        Same as `params` as defined in io.findatree.load_channels().
+    """
     # Open file for writing if exists, create otherwise.
     with h5py.File(path, 'a') as f:
-        
-        # Get pinter to 'channels' group if it does exist, otherwise create 'channels' group.
+        '''Three possible cases to cover:
+            1. Channels group EXISTS ...
+                a. ... and dsm, dtm and ortho path attributes are NOT the same as in params_channels -> Raise Error
+                b. ... and dsm, dtm and ortho path attributes ARE the same as in params_channels -> Continue and overwrite 
+            2. Channels group does NOT EXIST -> Write
+        '''
         if 'channels' in f:
             grp = f.get('channels')
+            
+            # Assert that any of the dsm, dtm and ortho paths saved in group attributes are the same as in params_channels
+            for key in ['path_dsm', 'path_dtm', 'path_ortho']:
+                assert grp.attrs[key] == params_channels[key], f"You are trying to overwrite channels with a different `{key}` attribute. No file was written. Change the saving directory."
+        
         else:
             grp = f.create_group('channels')
         
@@ -661,9 +729,13 @@ def save_channels(path: str, channels: Dict , params_channels: Dict) -> None:
 
         # Add/update all channel as group datasets
         for key in channels:
-            if key in grp:
+            
+            # Overwrite case [1b]
+            if key in grp: 
                 del grp[key]
                 grp.create_dataset(key, data=channels[key])
+            
+            # Write case [2]
             else:
                 dset = grp.create_dataset(key, data=channels[key])
         pass

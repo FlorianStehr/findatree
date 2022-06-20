@@ -214,7 +214,7 @@ def main(
     params : Dict
         Parameters used during function call with following keys:
         * thresh_global_chm [float]: Global chm threshold, by default 3.
-        * thresh_global_ndvi [float]: Global ndvi threshold ,by default 0.4.
+        * thresh_global_ndvi [float]: Global ndvi threshold, by default 0.4.
         * thresh_channel: Local thresholding channel, by default l. 
         * thresh_downscale [int]: Downscale factor before local thresholding, by default 1,
         * thresh_blur: Apply median blur with kernel size 3 before local thresholding, by default False.
