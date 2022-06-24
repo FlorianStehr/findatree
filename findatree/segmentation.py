@@ -1,10 +1,8 @@
 from typing import Dict, List, Tuple
 import numpy as np
-import cv2 as cv
-import numba
+import  time
 import importlib
 
-from scipy.spatial import distance_matrix
 from scipy.ndimage.morphology import distance_transform_edt as distance_transform
 
 import skimage.measure as measure
@@ -14,9 +12,9 @@ import skimage.morphology as morph
 import skimage.segmentation as segmentation
 import skimage.feature as feature
 
-import findatree.io as io
+import findatree.geo_to_image as geo_to_image
 
-importlib.reload(io)
+importlib.reload(geo_to_image)
 
 #%%
 def _local_thresholding(img_in: np.ndarray, mask: np.ndarray, width: float, px_width: float, blur=False) -> np.ndarray:
@@ -207,35 +205,6 @@ def labels_to_bounds(labels: np.ndarray) -> np.ndarray:
 
     return bounds
 
-
-#%%
-def _image_int_resize(image: np.ndarray, shape: Tuple[int, int]) -> np.ndarray:
-    """Resize integer image to arbitray shape. 
-    
-    Wrapper around skimage.trasnform.resize() with parameters adjusted for integer images.
-
-    Parameters
-    ----------
-    image : np.ndarray
-        Integer image.
-    shape : Tuple
-        Desired shape of integer image after resizing.
-
-    Returns
-    -------
-    np.ndarray
-        Resized integer image.
-    """
-    image_resize = transform.resize(
-        image,
-        output_shape=shape,
-        order=0,
-        preserve_range=True,
-        )
-    
-    return image_resize
-
-
 #%%
 def segment(
     cs: Dict,
@@ -247,9 +216,9 @@ def segment(
     Parameters
     ----------
     cs : Dict[np.ndarray,]
-        Dictionary of of secondary channels as np.ndarray of dtype=np.float64, see io.channels_primary_to_secondary().
+        Dictionary of of secondary channels as np.ndarray of dtype=np.float64, see geo_to_image.channels_load().
     params_cs : Dict
-         Dictionary of parameters of secondary channels, see io.channels_primary_to_secondary().
+         Dictionary of parameters of secondary channels, see geo_to_image.channels_load().
     params : Dict
         Parameters used during function call with following keys:
         * thresh_global_chm [float]: Global chm threshold, by default 5.
@@ -268,8 +237,8 @@ def segment(
     -------
     Tuple[Dict,Dict]
         cs_segment: dict[np.ndarray,...]
-            Dictionary of labels as np.ndarray of dtype=np.float64 with same shape as images in original `cs`.
-            Keys are: ['labels', 'bound', 'blue', 'green', 'red', 're', 'nir'].
+            Dictionary of labels of same shape as images in original `cs`.
+            Keys are: [('labels', dtype=np.uint64), ('bound', dtype=np.uint8), ('mask_global', dtype=np.uint8), ('mask_seed', dtype=np.uint8)].
         params: dict
             Parameters used during function call.
 
@@ -292,11 +261,11 @@ def segment(
     params_standard = {
         'thresh_global_chm': 5,
         'thresh_global_ndvi': 0.4,
-        'thresh_channel': 'l',
+        'thresh_channel': 'light',
         'thresh_downscale': 1,
         'thresh_blur': False,
         'thresh_width': 30,
-        'water_channel': 'l',
+        'water_channel': 'light',
         'water_downscale': 0,
         'water_peak_dist': 1.2,
         'water_hole_min_area': 0.,
@@ -310,11 +279,11 @@ def segment(
             params[k] = params_standard[k]
 
     ######################################### (1) Prepare channels at defined px_widths for thresholding and watershed
-    cs_thresh, params_thresh = io._channels_downscale(cs, params_cs, downscale=params['thresh_downscale'])
+    cs_thresh, params_thresh = geo_to_image._channels_downscale(cs, params_cs, downscale=params['thresh_downscale'])
     params['thresh_shape'] = params_thresh['shape']
     params['thresh_px_width'] = params_thresh['px_width']
 
-    cs_water, params_water = io._channels_downscale(cs, params_cs, downscale=params['water_downscale'])
+    cs_water, params_water = geo_to_image._channels_downscale(cs, params_cs, downscale=params['water_downscale'])
     params['water_shape'] = params_water['shape']
     params['water_px_width'] = params_water['px_width']
 
@@ -339,8 +308,11 @@ def segment(
 
     ######################################### (4) Re-upscale masks for watershed
     # Upscale tresholding masks to original resolution
-    mask_global_water = _image_int_resize(mask_global_thresh, shape=params['water_shape']).astype(np.bool_)
-    mask_local_water = _image_int_resize(mask_local_thresh, shape=params['water_shape']).astype(np.bool_)
+    mask_global_water = transform.resize(mask_global_thresh,params['water_shape'], order=0, preserve_range=True)
+    mask_global_water = mask_global_water.astype(np.bool_)
+
+    mask_local_water = transform.resize(mask_local_thresh, params['water_shape'], order=0, preserve_range=True)
+    mask_local_water = mask_local_water.astype(np.bool_)
 
 
     ######################################### (5) Marker based watershed based on local peaks in distance transform of local mask
@@ -361,18 +333,26 @@ def segment(
     )
 
     ######################################### (6) Resize labels/bounds/masks
-    labels = _image_int_resize(labels_water, shape=params_cs['shape'])
-    mask_global = _image_int_resize(mask_global_water, shape=params_cs['shape'])
-    mask_seed = _image_int_resize(mask_seed_water, shape=params_cs['shape'])
+    labels = transform.resize(labels_water, params_cs['shape'], order=0, preserve_range=True)
+    mask_global = transform.resize(mask_global_water, params_cs['shape'], order=0, preserve_range=True)
+    mask_seed = transform.resize(mask_seed_water, params_cs['shape'], order=0, preserve_range=True)
     bounds= labels_to_bounds(labels)
 
     ######################################### (7) Prepare returns
     # Prepare return channels
     cs_segment = {}
     cs_segment['labels'] = labels
+    cs_segment['mask_global'] = mask_global
     cs_segment['bounds'] = bounds
     cs_segment['mask_seed'] = mask_seed
-    cs_segment['mask_global'] = mask_global
+
+    # Add date of processing to params
+    date_time = time.strftime('%Y%m%d-%H%M%S', time.localtime())
+    date_time = date_time[2:]
+    params['date_time'] = date_time
+
+    # Add area code
+    params['tnr'] = params_cs['tnr']
 
     # Sort parameters according to key
     params = dict([(key, params[key]) for key in sorted(params.keys())])
