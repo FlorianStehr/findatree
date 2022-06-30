@@ -13,6 +13,7 @@ from bokeh.models import Column
 from bokeh.models import Toggle
 
 import findatree.transformations as transformations
+import findatree.geo_to_image as geo_to_image
 importlib.reload(transformations)
 
 #%%
@@ -24,9 +25,12 @@ class Plotter:
         self.segments = None
         self.source = bokeh.plotting.ColumnDataSource(data={})
         self.figures = {}
+        self.channels_downscale = 0
         
         # Style attributes
-        self.size = 400
+        self.width = 400
+        self.aspect_ratio = 1 # Height / Width
+        self.heigth = 400
         self.palette = 'Magma256'
         self.title_font_size = '150%'
         self.nan_color = 'rgba(0, 0, 0, 0)'
@@ -41,6 +45,9 @@ class Plotter:
 
 #%%
     def add_channels(self, channels: Dict, params_channels: Dict) -> None:
+
+        # Downscale channels using gaussian image pyramids
+        channels, params_channels = geo_to_image._channels_downscale(channels, params_channels, downscale = self.channels_downscale)
 
         # Get source data
         data = self.source.data
@@ -121,11 +128,17 @@ class Plotter:
         if len(self.figures) == 0:  # NO other figure -> set xy_range according to source
             self.x_range = (0, self.source.data['width'][0])
             self.y_range = (self.source.data['height'][0], 0)
+            
+            # Update aspect ratio according to ranges the first time
+            self.aspect_ratio = self.y_range[0] / self.x_range[1]
+
+            # Update height according to aspect ratio and width
+            self.height = int(self.width * self.aspect_ratio)
 
         # Create figure
         fig = bokeh.plotting.figure(
-            width = self.size,
-            height = self.size,
+            width = self.width,
+            height = self.height,
             x_range = self.x_range,
             y_range = self.y_range,
             x_axis_label='x [m]',
@@ -160,7 +173,10 @@ class Plotter:
 
         # Add hover tool to rgb image
         hover_tool = bokeh.models.HoverTool(
-            tooltips=[("(x, y)", "($x, $y)")],
+            tooltips=[
+                ('(x, y)', '($x{0.1a}, $y{0.1a})'),
+            ],
+            renderers = [fig.renderers[0]],
         )
         fig.add_tools(hover_tool)
 
@@ -198,8 +214,10 @@ class Plotter:
         # Add hover tool
         hover_tool = bokeh.models.HoverTool(
             tooltips=[
-                (channel_name,f"@{channel_name}"),
+                    ('(x, y)', '($x{0.1a}, $y{0.1a})'),
+                    (channel_name,f"@{channel_name}"),
             ],
+            renderers = [fig.renderers[0]],
         )
         fig.add_tools(hover_tool)
 
@@ -210,7 +228,7 @@ class Plotter:
             value=(vmin,vmax),
             step=(vmax-vmin)/50,
             title=f"{channel_name} range:",
-            width=self.size // 2,
+            width=self.width // 2,
         )
         slider.js_link('value',color_mapper,'low', attr_selector=0)
         slider.js_link('value',color_mapper,'high', attr_selector=1)
@@ -231,8 +249,8 @@ class Plotter:
             active = True, 
             label = "Show Segments",
             button_type = "success",
-            width = self.size // 4,
-            height = self.size // 8,
+            width = self.width // 4,
+            height = self.height // 8,
             )
         
         # Loop through all figures and add bounds image connected to toggler
@@ -265,8 +283,8 @@ class Plotter:
             div = bokeh.models.Div(
                 text=f"{key}".upper(),
                 style={'font-size': self.title_font_size},
-                width=self.size,
-                height=self.size // 16,
+                width=self.width,
+                height=self.height // 16,
                 )
 
             # Define column elements as list 
@@ -288,3 +306,51 @@ class Plotter:
         layout = bokeh.layouts.layout([cols])
         
         return layout 
+
+
+###################################################################### Plot labels as patches
+# Prepare patches source
+# offset = params_channels['shape'][0] * params_channels['px_width']
+# patches_data = {
+#     'xs' : [poly[0] for poly in polys.values() ],
+#     'ys' : [offset - poly[1] for poly in polys.values() ],
+#     'id' : [key for key in polys.keys() ]
+# }
+
+# patches_source = bokeh.plotting.ColumnDataSource(data=patches_data)
+
+# # Create toggler
+# toggler = bokeh.models.Toggle(
+#             active = False, 
+#             label = "Show Segments",
+#             button_type = "success",
+#             width = plt.size // 4,
+#             height = plt.size // 8,
+#             )
+
+# # Add patches to all channels
+# for key in plt.figures:
+#     fig = plt.figures[key][0]
+#     patches = fig.patches(
+#         source = patches_source,
+#         xs = 'xs',
+#         ys = 'ys',
+#         line_color = 'white',
+#         color = 'rgb(0,0,0,0)',
+#         line_width = 1,
+#         visible = False,
+#         )
+
+#     # Add hover tool
+#     hover_tool = bokeh.models.HoverTool(
+#         tooltips=[
+#             ('id','@id'),
+#         ],
+#         renderers = [patches],
+#     )
+#     fig.add_tools(hover_tool)
+    
+#     # Link visibility of patches to toggler
+#     toggler.js_link('active', patches, 'visible')
+
+#     plt.figures[key][0] = fig

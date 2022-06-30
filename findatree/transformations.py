@@ -59,3 +59,26 @@ def rgb_to_RGBA(red:np.ndarray, green: np.ndarray, blue: np.ndarray, perc: float
     rgba_ui32[mask] = 0
     
     return rgb_ui8, rgba_ui32
+
+
+################################################################################### rasterio.shapes conversion
+###################################################################################
+
+# import rasterio.features
+
+# shapes = rasterio.features.shapes(segments['labels'].copy(), mask = segments['labels'] > 0)
+
+# polys = {}
+
+# for i, shape in enumerate(shapes):
+#     # Label id
+#     id = shape[1]
+#     # Coordinates
+#     coord = shape[0]['coordinates']
+#     # Restrict to first polygon in coordinates, i.e. only outline polygon, no holes
+#     poly = coord[0]
+
+#     xs = [xy[0] for xy in poly]
+#     ys = [xy[1] for xy in poly]
+    
+#     polys[id] = np.array([xs, ys], dtype = np.float32) * params_channels['px_width']

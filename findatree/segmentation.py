@@ -56,7 +56,7 @@ def _local_thresholding(img_in: np.ndarray, mask: np.ndarray, width: float, px_w
         width_px +=1 
     
     # Print kernel width
-    print(f"    ... [segmentation._local_thresholding()] Gaussian thresholding kernel width: {width:.1f} [m] = {width_px:.0f} [px]")
+    # print(f"    ... [segmentation._local_thresholding()] Gaussian thresholding kernel width: {width:.1f} [m] = {width_px:.0f} [px]")
 
     # Local thresholding
     thresh = filters.threshold_local(
@@ -117,7 +117,7 @@ def _watershed_by_peaks_in_disttrafo(
 
     # Remove small holes in mask
     hole_min_area_px = int(np.round(hole_min_area / px_width**2))
-    print(f"    ... [segmentation._watershed_by_peaks_in_disttrafo()] Removing holes of area: {hole_min_area:.2f} [m**2] = {hole_min_area_px:.0f} [px]")
+    # print(f"    ... [segmentation._watershed_by_peaks_in_disttrafo()] Removing holes of area: {hole_min_area:.2f} [m**2] = {hole_min_area_px:.0f} [px]")
     mask = morph.remove_small_holes(
         mask.astype(np.bool_),
         area_threshold=hole_min_area_px,
@@ -130,7 +130,7 @@ def _watershed_by_peaks_in_disttrafo(
 
     # Set minimum distance in [m] and [px]
     peak_min_distance_px = int(np.round(peak_min_distance / px_width))
-    print(f"    ... [segmentation._watershed_by_peaks_in_disttrafo()] Local peaks min. distance: {peak_min_distance:.2f} [m] = {peak_min_distance_px:.0f} [px]")
+    # print(f"    ... [segmentation._watershed_by_peaks_in_disttrafo()] Local peaks min. distance: {peak_min_distance:.2f} [m] = {peak_min_distance_px:.0f} [px]")
 
     # Find local peaks in distance transform of mask
     peaks_idx = feature.peak_local_max(dist, min_distance=peak_min_distance_px)
@@ -162,7 +162,7 @@ def _watershed_by_peaks_in_disttrafo(
 
     # Remove small labels after watershed
     label_min_area_px = int(np.round(label_min_area / px_width**2))
-    print(f"    ... [segmentation._watershed_by_peaks_in_disttrafo()] Removing labels of area: {label_min_area:.2f} [m**2] = {label_min_area_px:.0f} [px]")
+    # print(f"    ... [segmentation._watershed_by_peaks_in_disttrafo()] Removing labels of area: {label_min_area:.2f} [m**2] = {label_min_area_px:.0f} [px]")
     labels = morph.remove_small_objects(
         labels,
         min_size=label_min_area_px,
