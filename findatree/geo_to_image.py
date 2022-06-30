@@ -13,7 +13,10 @@ import skimage.exposure as exposure
 
 # Import findatree modules
 from findatree import object_properties as objprops
+from findatree import io as io
+
 importlib.reload(objprops)
+importlib.reload(io)
 
 
 #%%
@@ -44,87 +47,6 @@ def print_raster_info(paths: List[str]) -> None:
             print(f"Geo bounds: {ds.bounds}")
             print(f"Affine geo-transfrom: {[val for val in ds.transform[:-3]]}")
 
-
-#%%
-def _find_paths_in_dirs(
-    dir_names: List[str],
-    tnr_number: int=None,
-    filetype_pattern: str= '*.tif',
-    dsm_pattern: str= 'dsm',
-    dtm_pattern: str = 'dtm',
-    ortho_pattern: str = 'ortho',
-    ) -> Dict:
-    """Find dsm, dtm and ortho rasters in directories and return full unique paths and params.
-
-    Parameters
-    ----------
-    dir_names : List[str]
-        List of absolute paths to all folders containing the necessary dsm, dtm and ortho rasters.
-    tnr_number : int, optional
-        Area number to be loaded. If `None` all area numbers are shown, by default `None`.
-    filetype_pattern : str, optional
-        Filetype pattern to be matched for rasters, by default '*.tif'
-    dsm_pattern : str, optional
-        dsm file pattern to be matched for rasters, by default 'dsm'
-    dtm_pattern : str, optional
-        dtm file pattern to be matched for rasters, by default 'dtm'
-    ortho_pattern : str, optional
-        ortho file pattern to be matched for rasters, by default 'ortho'
-    verbose : bool, optional
-        Print parameters during call, by default True.
-
-    Returns
-    -------
-    Tuple[List[str,],Dict]
-        paths_dict: Dict
-        * tnr [int]: Area number
-        * path_dsm [str]: Absolute path to dsm raster
-        * path_dtm [str]: Absolute path to dtm raster
-        * path_ortho [str]: Absolute path to ortho raster
-    """
-
-    # Get full paths to all files that match ``filetype_pattern`` in all directories
-    paths = []
-    for dir_name in dir_names:
-            path = sorted(glob.glob( os.path.join( dir_name,filetype_pattern) ) )
-            paths.extend(path)
-
-    # ``tnr_number`` to pattern 
-    if tnr_number is None:
-        print('No tnr found, displaying all available ' + filetype_pattern + 's:')
-        for p in paths: print('  ' + p)
-        print()
-
-    tnr_number = str(tnr_number)
-    tnr_pattern = 'tnr_' + tnr_number
-
-    # Get paths that contain ``tnr_number``
-    paths = [p for p in paths if bool(re.search(tnr_pattern, os.path.split(p)[-1], re.IGNORECASE))]
-
-    # Get path that contains non-case sensitive ``dsm_pattern``
-    paths_dsm = [p for p in paths if bool(re.search(dsm_pattern, os.path.split(p)[-1], re.IGNORECASE))]
-
-    # Get path that contains non-case sensitive ``dtm_pattern``
-    paths_dtm = [p for p in paths if bool(re.search(dtm_pattern, os.path.split(p)[-1], re.IGNORECASE))]
-
-    # Get path that contains non-case sensitive ``ortho_pattern``
-    paths_ortho = [p for p in paths if bool(re.search(ortho_pattern, os.path.split(p)[-1], re.IGNORECASE))]
-
-    # Assert that there is only one valid dsm, dtm and ortho file 
-    assert len(paths_dsm) == 1, f"No file or more than one file with pattern `{dsm_pattern}` found in given directories"
-    assert len(paths_dtm) == 1, f"No file or more than one file with pattern `{dtm_pattern}` found in given directories"
-    assert len(paths_ortho) == 1, f"No file or more than one file with pattern `{ortho_pattern}` found in given directories"
-
-    # Join tnr number and dsm/dtm/ortho paths
-    paths_dict = {
-        'tnr': tnr_number,
-        'path_dsm': paths_dsm[0],
-        'path_dtm': paths_dtm[0],
-        'path_ortho': paths_ortho[0],
-    }
-
-    return paths_dict
-
     
 #%%
 def _reproject_to_primary(paths_dict: Dict, px_width: float) -> Tuple[Dict, Dict]:
@@ -135,7 +57,7 @@ def _reproject_to_primary(paths_dict: Dict, px_width: float) -> Tuple[Dict, Dict
     Parameters:
     ----------
     paths_dict: Dict
-        Dictionary of full path names to raster-files.Must contain keys `path_dsm`, `path_dtm`, `path_ortho`, see findatree.geo_to_image._find_paths_in_dirs()
+        Dictionary of full path names to raster-files.Must contain keys `path_dsm`, `path_dtm`, `path_ortho`, see findatree.io._find_paths_in_dirs()
     px_width: float
         Isotropic width per pixel in [m] of all reprojected rasters/primary channels.
 
@@ -539,7 +461,7 @@ def channels_load(
     """Reproject dsm, dtm and ortho rasters to of same area code to same intersection and resolution and convert/normalize to secondary channels.
 
     This function combines:
-    * findatree.geo_to_image._find_paths_in_dirs()
+    * findatree.io._find_paths_in_dirs()
     * findatree.geo_to_image._reproject_to_primary()
     * findatree.geo_to_image._channels_primary_to_secondary() 
     * findatree.geo_to_image._channels_downscale
@@ -588,7 +510,7 @@ def channels_load(
     ######################################### (1) Function calls
 
     # Find paths to dsm, dtm, ortho rasters of same area code
-    paths_dict = _find_paths_in_dirs(dir_names, tnr_number=params['tnr'])   
+    paths_dict = io._find_paths_in_dirs(dir_names, tnr_number=params['tnr'])   
     
     # Reproject dsm, dtm, ortho rasters to same resolution and intersection -> primary channels
     channels_prim, params_prim = _reproject_to_primary(paths_dict, px_width=params['px_width_reproject'])
