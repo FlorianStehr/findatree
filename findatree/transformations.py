@@ -2,6 +2,7 @@ from typing import Dict, List, Tuple
 import numpy as np
 import cv2
 import skimage.exposure
+import rasterio
 
 def rgb_to_RGBA(red:np.ndarray, green: np.ndarray, blue: np.ndarray, perc: float = 1) -> Tuple[np.ndarray, np.ndarray]:
     """Convert red, green and blue float32 images of shape (M,N) to RGB uint8 image of shape (M,N,3) and RGBA uint32 image of shape (M,N).
@@ -59,6 +60,26 @@ def rgb_to_RGBA(red:np.ndarray, green: np.ndarray, blue: np.ndarray, perc: float
     rgba_ui32[mask] = 0
     
     return rgb_ui8, rgba_ui32
+
+
+def affine_numpy_to_resterio(affine_numpy: np.ndarray) -> rasterio.Affine:
+    """ Transform affine geo transformation from np.ndarray of shape (3,3) to rasterio.Affine object.
+
+    Parameters
+    ----------
+    affine_numpy : np.ndarray
+        Affine geo transformation of shape (3,3) of order: `[[a, b, c], [d, e, f], [g, h, i]]`, see rasterio.Affine.
+
+    Returns
+    -------
+    rasterio.Affine
+        Affine geo transformation
+    """
+    affine = affine_numpy.copy()
+    affine = affine.flatten()
+    affine_rasterio = rasterio.Affine(affine[0], affine[1], affine[2], affine[3], affine[4], affine[5])
+
+    return affine_rasterio
 
 
 ################################################################################### rasterio.shapes conversion

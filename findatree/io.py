@@ -1,8 +1,16 @@
 from typing import Dict, List, Tuple
+import importlib
 import os
 import re
 import glob
 import h5py
+import numpy as np
+import shapefile
+import rasterio
+
+import findatree.transformations as transformations
+importlib.reload(transformations)
+
 
 #%%
 def _find_paths_in_dirs(
@@ -154,6 +162,66 @@ def channels_to_hdf5(channels: Dict , params_channels: Dict, dir_name: str=r'C:\
             else:
                 dset = grp.create_dataset(key, data=channels[key])
         pass
+
+
+#%%
+def load_shapefile(dir_names: List, params_channels: Dict) -> Tuple[Dict, Dict, Dict]:
+
+    # Search for paths to wanted files in given directories
+    paths = _find_paths_in_dirs(dir_names, params_channels['tnr'])
+
+    # Get affine geo-trafo as rasterio.Affine to convert geo to px coordinates
+    affine = transformations.affine_numpy_to_resterio(params_channels['affine'])
+
+    # Open shapefile
+    with shapefile.Reader(paths['path_shapes']) as sf:
+
+        # Read dimensions, names, etc.
+        n_shapes = len(sf)
+        attr_names = [f[0] for f in sf.fields[1:]]
+        n_attr = len(sf.record(0))
+
+        # Define which attributes will be included in final output
+        attr_names_include = ['Enr', 'Bnr', 'Ba', 'BHD_2020', 'Alter_2020', 'BK', 'KKL', 'NBV', 'SST', 'Gilb', 'Kommentar', 'Sicherheit']
+     
+        # Assert that attribute names match length of records
+        assert len(attr_names) == n_attr, f"`len(shape_attr_names)` of {len(attr_names)} does not match `n_shape_attr` of {n_attr}"
+
+        # Now go through all shapes
+        polys = {}
+        polys_attrs = {}
+        for i_poly, shape in enumerate(sf.shapes()):
+            
+            # Get shape's polygon
+            poly = np.array(shape.points).T
+
+            # Convert polygon from geo to px coordinates
+            poly = np.array(~affine * poly).T
+
+            # Add polygon to dict
+            polys[i_poly + 1] = poly  # Reserve 0 for nodata values
+
+            # Get shape's records
+            records = sf.record(i_poly)
+
+            # Create records dictionary, i.e. attributes
+            poly_attrs = [ (attr_names[i].lower(), val) for i, val in enumerate(records) if attr_names[i] in attr_names_include ]
+            poly_attrs = dict(poly_attrs)
+
+            # Add attributes to dict
+            polys_attrs[i_poly + 1] = poly_attrs  # Reserve 0 for nodata values
+    
+    # Create dictionary of parameters
+    params = {}
+    params['tnr'] = params_channels['tnr']
+    params['affine'] = params_channels['affine']
+    params['path_shapes'] = paths['path_shapes']
+    params['n_shapes'] = n_shapes
+    params['n_attrs'] = len(attr_names_include)
+    params['attrs_names'] = attr_names_include
+
+    return polys, polys_attrs, params
+
 
 
 #%%
