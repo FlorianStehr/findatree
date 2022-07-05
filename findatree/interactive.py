@@ -23,11 +23,17 @@ class Plotter:
         
         self.channels = None
         self.segments = None
+
         self.source = bokeh.plotting.ColumnDataSource(data={})
+        self.source_crowns = {}
+
         self.figures = {}
+        self.togglers = {}
         self.channels_downscale = 0
         
         # Style attributes
+        self.x_range = None
+        self.y_range= None
         self.width = 400
         self.aspect_ratio = 1 # Height / Width
         self.heigth = 400
@@ -54,9 +60,9 @@ class Plotter:
         
         # Add dimensions in meters to source
         data['x'] = [0]
-        data['y'] = [params_channels['shape'][0] * params_channels['px_width']]
-        data['width'] = [params_channels['shape'][1] * params_channels['px_width']]
-        data['height'] = [params_channels['shape'][0] * params_channels['px_width']]
+        data['y'] = [ params_channels['shape'][0] ]
+        data['width'] = [ params_channels['shape'][1] ]
+        data['height'] = [ params_channels['shape'][0] ]
 
         # Update
         self.source = bokeh.plotting.ColumnDataSource(data=data)
@@ -85,6 +91,7 @@ class Plotter:
 
         pass
 
+
 #%%
     def _source_add_channel(self, channel_name):
         
@@ -102,7 +109,38 @@ class Plotter:
         # Update
         self.source = bokeh.plotting.ColumnDataSource(data=data)
 
-        pass    
+        pass
+
+
+#%%
+    def _source_add_crowns(
+        self,
+        crowns: Dict,
+        crowns_attrs: Dict,
+        name: str,
+        include_attrs: List) -> None:
+        
+        # Get downscaling factor and y offset due to inverted axis
+        downscale = self.channels_downscale
+        offset = self.source.data['height'][0]
+
+        #Prepare patches source: Add polygons
+        patches_data = {
+            'xs' : [crown[:, 0] / 2**downscale for crown in crowns.values()],
+            'ys' : [offset - (crown[:, 1] / 2**downscale) for crown in crowns.values()],
+        }
+
+        #Prepare patches source: Add attributes defined by fields
+        for key in include_attrs:
+            try:
+                patches_data[key] = [crown_attrs[key] for crown_attrs in crowns_attrs.values()]
+            except:
+                print(f"Field `{key}` could not be assigned to source")
+
+        # Update source
+        self.source_crowns[name] = bokeh.plotting.ColumnDataSource(data=patches_data)
+
+        pass
 
 #%%
     def _source_add_rgb(self, perc):
@@ -141,8 +179,8 @@ class Plotter:
             height = self.height,
             x_range = self.x_range,
             y_range = self.y_range,
-            x_axis_label='x [m]',
-            y_axis_label='y [m]',
+            x_axis_label='x [px]',
+            y_axis_label='y [px]',
             active_scroll='wheel_zoom',
             )
 
@@ -162,7 +200,7 @@ class Plotter:
         self._source_add_rgb(perc)
 
         # Add rgb image to figure
-        img_rgba = fig.image_rgba(
+        img = fig.image_rgba(
             source=self.source,
             image='rgb',
             x='x',
@@ -176,7 +214,7 @@ class Plotter:
             tooltips=[
                 ('(x, y)', '($x{0.1a}, $y{0.1a})'),
             ],
-            renderers = [fig.renderers[0]],
+            renderers = [img],
         )
         fig.add_tools(hover_tool)
 
@@ -201,7 +239,7 @@ class Plotter:
         color_mapper = bokeh.transform.LinearColorMapper(palette=self.palette , low=vmin , high=vmax, nan_color=self.nan_color)
         
         # Add gray scale image to figure
-        img_rgba = fig.image(
+        img = fig.image(
             source=self.source,
             image=channel_name,
             x='x',
@@ -217,7 +255,7 @@ class Plotter:
                     ('(x, y)', '($x{0.1a}, $y{0.1a})'),
                     (channel_name,f"@{channel_name}"),
             ],
-            renderers = [fig.renderers[0]],
+            renderers = [img],
         )
         fig.add_tools(hover_tool)
 
@@ -238,8 +276,64 @@ class Plotter:
         
         pass
 
+
 #%%
-    def _figures_add_toggler_bounds(self) -> Toggle:
+    def togglers_add_crowns(
+        self,
+        crowns: Dict,
+        crowns_attrs: Dict,
+        name: str = 'ground',
+        include_attrs: List = ['ba', 'bhd_2020', 'alter_2020', 'bk', 'kkl', 'nbv', 'sst', 'gilb'],
+        ) -> None:
+
+        self._source_add_crowns(crowns, crowns_attrs, name, include_attrs)
+
+        # Create toggler
+        toggler = bokeh.models.Toggle(
+                    active = True, 
+                    label = "Show crowns:" + name,
+                    button_type = "success",
+                    width = self.width // 4,
+                    height = self.height // 8,
+                    )
+
+        # Update
+        self.togglers[name] = toggler
+
+        # Add patches to all channels
+        for key in self.figures:
+            fig = self.figures[key][0]
+            patches = fig.patches(
+                source = self.source_crowns[name],
+                xs = 'xs',
+                ys = 'ys',
+                line_color = 'black',
+                color = 'white',
+                alpha=0.5,
+                line_width = 1,
+                visible = True,
+                )
+
+            # Define hover tool tooltips
+            tooltips = [(key, f"@{key}") for key in include_attrs]
+
+            # Add hover tool
+            hover_tool = bokeh.models.HoverTool(
+                tooltips=tooltips,
+                renderers = [patches],
+            )
+            fig.add_tools(hover_tool)
+            
+            # Link visibility of patches to toggler
+            toggler.js_link('active', patches, 'visible')
+
+            # Update
+            self.figures[key][0] = fig
+
+        pass
+
+#%%
+    def togglers_add_bounds(self) -> None:
         
         # Assert that bounds are in source
         assert 'bounds' in self.source.data.keys(), "`bounds` not in self.source.data"
@@ -270,16 +364,20 @@ class Plotter:
             )
             toggler.js_link('active', bounds, 'visible')
 
-        return toggler
+        # Update
+        self.togglers['bounds'] = toggler
+
+        pass
 
 
 #%%
     def create_layout(self):
         
-        # Create list of bokeh columns by combining all elements in self.figures and add title division
         cols = []
+
         for key in self.figures:
-            # Add title division
+            
+            # Define title division
             div = bokeh.models.Div(
                 text=f"{key}".upper(),
                 style={'font-size': self.title_font_size},
@@ -287,70 +385,22 @@ class Plotter:
                 height=self.height // 16,
                 )
 
-            # Define column elements as list 
+            # Define regular figure column as [div, fig, slider, ...]
             col_elements = [div]
             for item in self.figures[key]:
                 col_elements.extend([item])
 
-            # Create column and add to columns  
+            # Create regular figure column and add to list of all columns  
             col = bokeh.layouts.column(col_elements)
             cols.extend([col])
 
-        # Create final layout
-        try:
-            toggler = self._figures_add_toggler_bounds()
-            cols.extend([toggler])
-        except:
-            pass
-
+        # Add all togglers to last column
+        if len(self.togglers) > 0:
+            col_last = bokeh.layouts.column([toggler for toggler in self.togglers.values()])
+            cols.extend([col_last])
+                
         layout = bokeh.layouts.layout([cols])
         
         return layout 
 
 
-###################################################################### Plot labels as patches
-# Prepare patches source
-# offset = params_channels['shape'][0] * params_channels['px_width']
-# patches_data = {
-#     'xs' : [poly[0] for poly in polys.values() ],
-#     'ys' : [offset - poly[1] for poly in polys.values() ],
-#     'id' : [key for key in polys.keys() ]
-# }
-
-# patches_source = bokeh.plotting.ColumnDataSource(data=patches_data)
-
-# # Create toggler
-# toggler = bokeh.models.Toggle(
-#             active = False, 
-#             label = "Show Segments",
-#             button_type = "success",
-#             width = plt.size // 4,
-#             height = plt.size // 8,
-#             )
-
-# # Add patches to all channels
-# for key in plt.figures:
-#     fig = plt.figures[key][0]
-#     patches = fig.patches(
-#         source = patches_source,
-#         xs = 'xs',
-#         ys = 'ys',
-#         line_color = 'white',
-#         color = 'rgb(0,0,0,0)',
-#         line_width = 1,
-#         visible = False,
-#         )
-
-#     # Add hover tool
-#     hover_tool = bokeh.models.HoverTool(
-#         tooltips=[
-#             ('id','@id'),
-#         ],
-#         renderers = [patches],
-#     )
-#     fig.add_tools(hover_tool)
-    
-#     # Link visibility of patches to toggler
-#     toggler.js_link('active', patches, 'visible')
-
-#     plt.figures[key][0] = fig
