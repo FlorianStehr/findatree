@@ -226,6 +226,83 @@ def load_shapefile(dir_names: List, params_channels: Dict) -> Tuple[Dict, Dict, 
     return crowns, params
 
 
+#%%
+def crowns_to_hdf5(crowns: Dict , params_crowns: Dict, dir_name: str=r'C:\Data\lwf\processed') -> None:
+    """Save crowns dictionary in .hdf5 container.
+
+    Group `'crowns' + params_crowns['origin']` wil be created in .hdf5.
+    Every crown will be one dataset of name `1, 2, ..., N` corresponding to crown `'polygon'` saved as np.ndarray of format [ [x0, y0], [x1, y1], ... ].
+    Every crown dataet contains attributes according to `'attributes'` of `crowns`.
+
+    Parameters
+    ----------
+    segments : Dict
+        Dictionary of labels as returned by segmentation.segment()
+    params_segments : Dict
+        Dictionary ofsegmentation parameters as returned by segmentation.segment()
+    dir_name: str
+        Path to directory where .hdf5 is stored
+    """
+    # Define name of .hdf5
+    name = f"tnr{params_crowns['tnr']}.hdf5"
+    
+    # Define full path to .hdf5, i.e. directory + name
+    path = os.path.join(dir_name, name)
+
+    # Define group name
+    try:
+        group_name = 'crowns_' + params_crowns['origin'] 
+    except:
+        print("Please provide `'origin'` in params_crowns")
+
+    # Open file for writing if exists, create otherwise.
+    with h5py.File(path, 'a') as f:
+        '''Two possible cases to cover:
+            1. Group group_name EXISTS -> Continue and overwrite 
+            2. Group group_name does NOT EXIST -> Write
+        '''
+        if group_name in f:
+            grp = f.get(group_name)
+        else:
+            grp = f.create_group(group_name)
+        
+        # Update all parameters as group attributes
+        for key in params_crowns:
+            grp.attrs[key] = params_crowns[key]
+
+        # Add/update all channel as group datasets
+        for idx, crown in crowns.items():
+
+            # Convert key to string with zero padding
+            idx = str(idx).zfill(5)
+
+            # Overwrite case [1]
+            if idx in grp:
+
+                # Dataset
+                del grp[idx]
+                dset = grp.create_dataset(idx, data = crown['polygon'])
+                
+                # Attributes
+                try:
+                    for name, val in crown['attributes'].items():
+                        dset.attrs[name] = val
+                except:
+                    pass
+                
+            # Write case [2]
+            else:
+                # Dataset
+                dset = grp.create_dataset(idx, data = crown['polygon'])
+                
+                # Attributes
+                try:
+                    for name, val in crown['attributes'].items():
+                        dset.attrs[name] = val
+                except:
+                    pass
+        pass
+
 
 #%%
 def segments_to_hdf5(segments: Dict , params_segments: Dict, dir_name: str=r'C:\Data\lwf\processed') -> None:

@@ -127,7 +127,6 @@ class Plotter:
         patches_data = {
             'xs' : [crown['polygon'][:, 0] / 2**downscale for crown in crowns.values()],
             'ys' : [offset - (crown['polygon'][:, 1] / 2**downscale) for crown in crowns.values()],
-            # 'ys' : [(crown['polygon'][:, 1] / 2**downscale) for crown in crowns.values()],
         }
 
         # Prepare patches source: Add attributes defined by fields
