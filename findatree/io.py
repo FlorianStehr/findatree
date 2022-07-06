@@ -188,39 +188,42 @@ def load_shapefile(dir_names: List, params_channels: Dict) -> Tuple[Dict, Dict, 
         assert len(attr_names) == n_attr, f"`len(shape_attr_names)` of {len(attr_names)} does not match `n_shape_attr` of {n_attr}"
 
         # Now go through all shapes
-        polys = {}
-        polys_attrs = {}
-        for i_poly, shape in enumerate(sf.shapes()):
+        crowns = {}
+        for idx, shape in enumerate(sf.shapes()):
             
+            ##################### Polygons
             # Get shape's polygon
             poly = np.array(shape.points).T
 
             # Convert polygon from geo to px coordinates
             poly = np.array(~affine * poly).T
 
-            # Add polygon to dict
-            polys[i_poly + 1] = poly  # Reserve 0 for nodata values
+            # Prepare polygon dict
+            poly_dict = dict([('polygon', poly)])
 
+            ##################### Records
             # Get shape's records
-            records = sf.record(i_poly)
+            records = sf.record(idx)
 
             # Create records dictionary, i.e. attributes
-            poly_attrs = [ (attr_names[i].lower(), val) for i, val in enumerate(records) if attr_names[i] in attr_names_include ]
-            poly_attrs = dict(poly_attrs)
+            attrs = [ (attr_names[i].lower(), val) for i, val in enumerate(records) if attr_names[i] in attr_names_include ]
+            attrs_dict = dict([('attributes', dict(attrs))])
 
-            # Add attributes to dict
-            polys_attrs[i_poly + 1] = poly_attrs  # Reserve 0 for nodata values
+
+            # Add merged polygon/attributes dicts to shapes dict
+            crowns[idx + 1] = poly_dict | attrs_dict  # Reserve 0 for nodata values
     
     # Create dictionary of parameters
     params = {}
     params['tnr'] = params_channels['tnr']
     params['affine'] = params_channels['affine']
     params['path_shapes'] = paths['path_shapes']
-    params['n_shapes'] = n_shapes
-    params['n_attrs'] = len(attr_names_include)
-    params['attrs_names'] = attr_names_include
+    params['origin'] = 'human'
+    params['number_shapes'] = n_shapes
+    params['number_attributes'] = len(attr_names_include)
+    params['attribute_names'] = [name.lower() for name in attr_names_include]
 
-    return polys, polys_attrs, params
+    return crowns, params
 
 
 

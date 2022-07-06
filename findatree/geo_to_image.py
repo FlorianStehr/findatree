@@ -157,13 +157,14 @@ def _reproject_to_primary(paths_dict: Dict, px_width: float) -> Tuple[Dict, Dict
                     dst_nodata=0,
                     resampling=Resampling.nearest
                 )
+                
                 # Assing NaNs to saturated values within source dtype
-                try:
-                    dest_band[dest_band.astype(source_dtype) == np.iinfo(source_dtype).max] = np.nan
-                    dest_band[dest_band.astype(source_dtype) == np.iinfo(source_dtype).min] = np.nan
-                except:
-                    dest_band[dest_band.astype(source_dtype) == np.finfo(source_dtype).max] = np.nan
-                    dest_band[dest_band.astype(source_dtype) == np.finfo(source_dtype).min] = np.nan
+                # try:
+                #     dest_band[dest_band.astype(source_dtype) == np.iinfo(source_dtype).max] = np.nan
+                #     dest_band[dest_band.astype(source_dtype) == np.iinfo(source_dtype).min] = np.nan
+                # except:
+                #     dest_band[dest_band.astype(source_dtype) == np.finfo(source_dtype).max] = np.nan
+                #     dest_band[dest_band.astype(source_dtype) == np.finfo(source_dtype).min] = np.nan
                 
                 # Close small NaN holes in band
                 dest_band = _close_nan_holes(dest_band)[0]
@@ -188,14 +189,18 @@ def _reproject_to_primary(paths_dict: Dict, px_width: float) -> Tuple[Dict, Dict
                 )
                 
                 # Assign NaNs to nodata values of mask
-                dest_band_mask[dest_band_mask == 0] = np.nan  
+                dest_band_mask[dest_band_mask == 0] = np.nan
+
                 # Check if whole raster is empty
-                isempty = np.sum(np.isnan(dest_band).flatten()) == (dest_shape[0]*dest_shape[1]) 
+                isempty = np.sum(np.isnan(dest_band).flatten()) == (dest_shape[0]*dest_shape[1])
+
                 # If raster is not completely empty combine raster with mask
                 if not isempty:
                     dest_band_mask = dest_band_mask * dest_band
+
                 # Set data value to 1
                 dest_band_mask[np.isfinite(dest_band_mask)] = 1
+
                 # Combine to intersection mask, nodata -> NaN, data -> 1
                 dest_mask = dest_mask * dest_band_mask
 

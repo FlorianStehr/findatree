@@ -53,20 +53,20 @@ class Plotter:
     def add_channels(self, channels: Dict, params_channels: Dict) -> None:
 
         # Downscale channels using gaussian image pyramids
-        channels, params_channels = geo_to_image._channels_downscale(channels, params_channels, downscale = self.channels_downscale)
+        channels_down, params_channels_down = geo_to_image._channels_downscale(channels, params_channels, downscale = self.channels_downscale)
 
         # Get source data
         data = self.source.data
         
         # Add dimensions in meters to source
         data['x'] = [0]
-        data['y'] = [ params_channels['shape'][0] ]
-        data['width'] = [ params_channels['shape'][1] ]
-        data['height'] = [ params_channels['shape'][0] ]
+        data['y'] = [ params_channels_down['shape'][0] ]
+        data['width'] = [ params_channels_down['shape'][1] ]
+        data['height'] = [ params_channels_down['shape'][0] ]
 
         # Update
         self.source = bokeh.plotting.ColumnDataSource(data=data)
-        self.channels = channels
+        self.channels = channels_down
 
         pass
 
@@ -116,7 +116,6 @@ class Plotter:
     def _source_add_crowns(
         self,
         crowns: Dict,
-        crowns_attrs: Dict,
         name: str,
         include_attrs: List) -> None:
         
@@ -124,16 +123,17 @@ class Plotter:
         downscale = self.channels_downscale
         offset = self.source.data['height'][0]
 
-        #Prepare patches source: Add polygons
+        # Prepare patches source: Add polygons
         patches_data = {
-            'xs' : [crown[:, 0] / 2**downscale for crown in crowns.values()],
-            'ys' : [offset - (crown[:, 1] / 2**downscale) for crown in crowns.values()],
+            'xs' : [crown['polygon'][:, 0] / 2**downscale for crown in crowns.values()],
+            'ys' : [offset - (crown['polygon'][:, 1] / 2**downscale) for crown in crowns.values()],
+            # 'ys' : [(crown['polygon'][:, 1] / 2**downscale) for crown in crowns.values()],
         }
 
-        #Prepare patches source: Add attributes defined by fields
+        # Prepare patches source: Add attributes defined by fields
         for key in include_attrs:
             try:
-                patches_data[key] = [crown_attrs[key] for crown_attrs in crowns_attrs.values()]
+                patches_data[key] = [crown['attributes'][key] for crown in crowns.values()]
             except:
                 print(f"Field `{key}` could not be assigned to source")
 
@@ -281,12 +281,16 @@ class Plotter:
     def togglers_add_crowns(
         self,
         crowns: Dict,
-        crowns_attrs: Dict,
-        name: str = 'ground',
-        include_attrs: List = ['ba', 'bhd_2020', 'alter_2020', 'bk', 'kkl', 'nbv', 'sst', 'gilb'],
+        params_crowns: Dict,
+        include_attrs: List = None,
         ) -> None:
 
-        self._source_add_crowns(crowns, crowns_attrs, name, include_attrs)
+        # Set name and which attributes wil be included 
+        name = params_crowns['origin']
+        if include_attrs == None: include_attrs = params_crowns['attribute_names']
+
+        # Update
+        self._source_add_crowns(crowns, name, include_attrs)
 
         # Create toggler
         toggler = bokeh.models.Toggle(
@@ -341,7 +345,7 @@ class Plotter:
         # Add toggler for showing bounds
         toggler = bokeh.models.Toggle(
             active = True, 
-            label = "Show Segments",
+            label = "Show crowns: watershed",
             button_type = "success",
             width = self.width // 4,
             height = self.height // 8,
