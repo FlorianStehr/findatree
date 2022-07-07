@@ -14,6 +14,7 @@ import skimage.exposure as exposure
 # Import findatree modules
 from findatree import object_properties as objprops
 from findatree import io as io
+from findatree import transformations as transformations
 
 importlib.reload(objprops)
 importlib.reload(io)
@@ -533,9 +534,7 @@ def channels_load(
         params[key] = paths_dict[key]
     
     # Add date of processing to params
-    date_time = time.strftime('%Y%m%d-%H%M%S', time.localtime())
-    date_time = date_time[2:]
-    params['date_time'] = date_time
+    params['date_time'] = transformations.current_datetime()
 
     # Add missing geo-referencing params
     params['crs'] = params_prim['crs']

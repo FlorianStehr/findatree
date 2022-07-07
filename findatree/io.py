@@ -165,7 +165,7 @@ def channels_to_hdf5(channels: Dict , params_channels: Dict, dir_name: str=r'C:\
 
 
 #%%
-def load_shapefile(dir_names: List, params_channels: Dict) -> Tuple[Dict, Dict, Dict]:
+def load_shapefile(dir_names: List, params_channels: Dict) -> Tuple[Dict, Dict]:
 
     # Search for paths to wanted files in given directories
     paths = _find_paths_in_dirs(dir_names, params_channels['tnr'])
@@ -177,18 +177,20 @@ def load_shapefile(dir_names: List, params_channels: Dict) -> Tuple[Dict, Dict, 
     with shapefile.Reader(paths['path_shapes']) as sf:
 
         # Read dimensions, names, etc.
-        n_shapes = len(sf)
+        n_crowns = len(sf)
         attr_names = [f[0] for f in sf.fields[1:]]
-        n_attr = len(sf.record(0))
 
         # Define which attributes will be included in final output
-        attr_names_include = ['Enr', 'Bnr', 'Ba', 'BHD_2020', 'Alter_2020', 'BK', 'KKL', 'NBV', 'SST', 'Gilb', 'Kommentar', 'Sicherheit']
-     
-        # Assert that attribute names match length of records
-        assert len(attr_names) == n_attr, f"`len(shape_attr_names)` of {len(attr_names)} does not match `n_shape_attr` of {n_attr}"
+        attr_names_include = ['Enr', 'Bnr', 'Ba', 'BK','BHD_2020', 'Alter_2020', 'KKL', 'NBV', 'SST', 'Gilb', 'Kommentar', 'Sicherheit']
+        
 
-        # Now go through all shapes
-        crowns = {}
+        # Init crowns polygons dictionary
+        crowns_polys = {}
+
+        # Init crowns records as numpy structed array
+        dtype = transformations.geojson_records_fields_to_numpy_dtype(sf.fields, attr_names_include)
+        crowns_recs = np.zeros(n_crowns, dtype = dtype)
+        
         for idx, shape in enumerate(sf.shapes()):
             
             ##################### Polygons
@@ -198,20 +200,28 @@ def load_shapefile(dir_names: List, params_channels: Dict) -> Tuple[Dict, Dict, 
             # Convert polygon from geo to px coordinates
             poly = np.array(~affine * poly).T
 
-            # Prepare polygon dict
-            poly_dict = dict([('polygon', poly)])
+            # Assign to crowns polygon dict
+            crowns_polys[idx + 1] = poly
 
             ##################### Records
             # Get shape's records
-            records = sf.record(idx)
+            recs = sf.record(idx)
 
-            # Create records dictionary, i.e. attributes
-            attrs = [ (attr_names[i].lower(), val) for i, val in enumerate(records) if attr_names[i] in attr_names_include ]
-            attrs_dict = dict([('attributes', dict(attrs))])
+            # Reduce records to included attributes
+            recs = [val for i, val in enumerate(recs) if attr_names[i] in attr_names_include]
+
+            # Add id at beginning of records
+            recs = [idx + 1] + recs
+
+            # Assign to crowns records array
+            crowns_recs[idx] = tuple(recs)
 
 
-            # Add merged polygon/attributes dicts to shapes dict
-            crowns[idx + 1] = poly_dict | attrs_dict  # Reserve 0 for nodata values
+    # Create return dictionary of crowns_polys and crowns_recs
+    crowns = {
+        'polygons': crowns_polys,
+        'features': dict([('terrestrial', crowns_recs)]),
+    }
     
     # Create dictionary of parameters
     params = {}
@@ -219,30 +229,23 @@ def load_shapefile(dir_names: List, params_channels: Dict) -> Tuple[Dict, Dict, 
     params['affine'] = params_channels['affine']
     params['path_shapes'] = paths['path_shapes']
     params['origin'] = 'human'
-    params['number_shapes'] = n_shapes
-    params['number_attributes'] = len(attr_names_include)
-    params['attribute_names'] = [name.lower() for name in attr_names_include]
+    params['number_crowns'] = n_crowns
 
     return crowns, params
 
 
 #%%
 def crowns_to_hdf5(crowns: Dict , params_crowns: Dict, dir_name: str=r'C:\Data\lwf\processed') -> None:
-    """Save crowns dictionary in .hdf5 container.
+    
+    # Nested function to savely get or create group
+    def get_or_create_group(group_name, file):
+        if group_name in file:
+            grp = file.get(group_name)
+        else:
+            grp = file.create_group(group_name)
+        return grp
+    
 
-    Group `'crowns' + params_crowns['origin']` wil be created in .hdf5.
-    Every crown will be one dataset of name `1, 2, ..., N` corresponding to crown `'polygon'` saved as np.ndarray of format [ [x0, y0], [x1, y1], ... ].
-    Every crown dataet contains attributes according to `'attributes'` of `crowns`.
-
-    Parameters
-    ----------
-    segments : Dict
-        Dictionary of labels as returned by segmentation.segment()
-    params_segments : Dict
-        Dictionary ofsegmentation parameters as returned by segmentation.segment()
-    dir_name: str
-        Path to directory where .hdf5 is stored
-    """
     # Define name of .hdf5
     name = f"tnr{params_crowns['tnr']}.hdf5"
     
@@ -255,52 +258,61 @@ def crowns_to_hdf5(crowns: Dict , params_crowns: Dict, dir_name: str=r'C:\Data\l
     except:
         print("Please provide `'origin'` in params_crowns")
 
+
     # Open file for writing if exists, create otherwise.
     with h5py.File(path, 'a') as f:
-        '''Two possible cases to cover:
-            1. Group group_name EXISTS -> Continue and overwrite 
-            2. Group group_name does NOT EXIST -> Write
-        '''
-        if group_name in f:
-            grp = f.get(group_name)
-        else:
-            grp = f.create_group(group_name)
+
+        # Get or create main group
+        grp = get_or_create_group(group_name, f)
         
         # Update all parameters as group attributes
         for key in params_crowns:
             grp.attrs[key] = params_crowns[key]
 
-        # Add/update all channel as group datasets
-        for idx, crown in crowns.items():
+        # Add datetime to main group attributes
+        grp.attrs['date_time'] = transformations.current_datetime()
+        
+        ########################################### Polygons
+        # Get or create 'polygons' subgroup
+        grp = get_or_create_group(group_name + '/polygons', f)
 
-            # Convert key to string with zero padding
-            idx = str(idx).zfill(5)
+        # Assign polygons as datasets in 'polygons' subgroup
+        for idx, poly in crowns['polygons'].items():
 
-            # Overwrite case [1]
-            if idx in grp:
+            # Convert idx to key to string with zero padding
+            key = str(idx).zfill(5)
 
-                # Dataset
-                del grp[idx]
-                dset = grp.create_dataset(idx, data = crown['polygon'])
-                
-                # Attributes
-                try:
-                    for name, val in crown['attributes'].items():
-                        dset.attrs[name] = val
-                except:
-                    pass
-                
-            # Write case [2]
+            # Overwrite or write polygons as datasets
+            if key in grp:
+                del grp[key]
+                grp.create_dataset(key, data = poly)    
             else:
-                # Dataset
-                dset = grp.create_dataset(idx, data = crown['polygon'])
+                grp.create_dataset(key, data = poly)
+
+        ########################################### Features
+        # Get or create 'features' subgroup
+        grp = get_or_create_group(group_name + '/features', f)
+
+        # Assign features as datasets in 'features' subgroup
+        for key, features in crowns['features'].items():
+
+            # Overwrite or write features as dataset
+            if key in grp:
+                del grp[key]
+                dset = grp.create_dataset(key, data = features)    
+            else:
+                dset = grp.create_dataset(key, data = features)
+            
+            # Define attributes dict for features dataset
+            features_attrs = {}
+            features_attrs['names'] = [name for name in features.dtype.names]
+            features_attrs['dtypes'] = [str(features.dtype[i]) for i in range(len(features.dtype))]
+
+            # Write attributes to features dataset
+            for key, val in features_attrs.items():
+                dset.attrs[key] = val
+
                 
-                # Attributes
-                try:
-                    for name, val in crown['attributes'].items():
-                        dset.attrs[name] = val
-                except:
-                    pass
         pass
 
 

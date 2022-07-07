@@ -1,9 +1,26 @@
 from typing import Dict, List, Tuple
+import time
 import numpy as np
 import cv2
 import skimage.exposure
 import rasterio
 
+
+#%%
+def current_datetime() -> str:
+    """Create a string of the current date and time.
+
+    Returns
+    -------
+    str
+        Current date and time in format `'%Y%m%d-%H%M%S'`
+    """
+    datetime = time.strftime('%Y%m%d-%H%M%S', time.localtime())
+    datetime = datetime[2:]
+    return datetime
+
+
+#%%
 def rgb_to_RGBA(red:np.ndarray, green: np.ndarray, blue: np.ndarray, perc: float = 1) -> Tuple[np.ndarray, np.ndarray]:
     """Convert red, green and blue float32 images of shape (M,N) to RGB uint8 image of shape (M,N,3) and RGBA uint32 image of shape (M,N).
 
@@ -81,6 +98,44 @@ def affine_numpy_to_resterio(affine_numpy: np.ndarray) -> rasterio.Affine:
 
     return affine_rasterio
 
+
+def geojson_records_fields_to_numpy_dtype(fields, include_names: List[str] = None) -> np.dtype:
+
+    # Set inlcuded attributes to all fields (except deletion flag) if None
+    if include_names == None:
+        include_names = [f[0] for f in fields[1:]]
+
+    # Initialize dtypes with 'id' field
+    dtypes = [('id', 'u4')]
+
+    for f in fields[1:]: 
+        name = f[0]
+
+        if name in include_names:
+
+            # Convert name to lower case
+            name = name.lower()
+            
+            # Define dtype cases
+            is_int = (f[1] == 'N') & (f[3] == 0)  # Integer
+            is_float = (f[1] == 'F') & (f[3] > 0) # Float
+            is_str = (f[1] == 'C') & (f[3] == 0)  # String
+
+            # Assign dtype according to cases
+            if is_int:  # Integer dtype
+                dtype = 'i4'
+            elif is_float:
+                dtype = 'f4'
+            elif is_str:
+                dtype = f"S{f[2]}"
+            else:
+                print(f"Field {f[0]} was not included, no numpy.dtype equvalent found for ({f[1]},{f[2]},{f[3]})")
+                dtype = None
+            
+            if dtype != None:
+                dtypes.append((name, dtype))
+
+    return np.dtype(dtypes)
 
 ################################################################################### rasterio.shapes conversion
 ###################################################################################
