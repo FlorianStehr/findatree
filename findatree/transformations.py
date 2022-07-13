@@ -2,9 +2,13 @@ from typing import Dict, List, Tuple
 import time
 import numpy as np
 import cv2
-import skimage.exposure
-import rasterio
 
+import skimage.exposure
+import skimage.segmentation
+import skimage.morphology
+
+import rasterio
+import rasterio.features
 
 #%%
 def current_datetime() -> str:
@@ -137,24 +141,49 @@ def geojson_records_fields_to_numpy_dtype(fields, include_names: List[str] = Non
 
     return np.dtype(dtypes)
 
-################################################################################### rasterio.shapes conversion
-###################################################################################
 
-# import rasterio.features
+#%%
+def labelimage_to_boundsimage(labels: np.ndarray) -> np.ndarray:
+    """Return boundaries of labels.
 
-# shapes = rasterio.features.shapes(segments['labels'].copy(), mask = segments['labels'] > 0)
+    Parameters
+    ----------
+    labels : np.ndarray
+        Image where connected components are assigned with one unique integer, i.e. labels.
 
-# polys = {}
+    Returns
+    -------
+    np.ndarray
+        Boundaries of all labels as np.uint8 array. Boundaries are assigned with 1, rest is zero.
+    """
+    bounds = skimage.segmentation.find_boundaries(
+        labels,
+        connectivity=1,
+        mode='outer',
+    ).astype(np.uint8)
+    bounds = skimage.morphology.thin(bounds)
 
-# for i, shape in enumerate(shapes):
-#     # Label id
-#     id = shape[1]
-#     # Coordinates
-#     coord = shape[0]['coordinates']
-#     # Restrict to first polygon in coordinates, i.e. only outline polygon, no holes
-#     poly = coord[0]
+    return bounds
 
-#     xs = [xy[0] for xy in poly]
-#     ys = [xy[1] for xy in poly]
-    
-#     polys[id] = np.array([xs, ys], dtype = np.float32) * params_channels['px_width']
+
+#%%
+def labelimage_to_polygons(img: np.ndarray) -> Dict:
+
+    # Define nodata mask
+    mask = img > 0
+
+    # Get shapes in image using rasterio.features.shapes()
+    shapes = rasterio.features.shapes(img, mask = mask)
+
+    # Transform shapes to standardized polygons format
+    polygons_dict = {}
+    for shape in shapes:
+        idx = int(shape[1])
+        poly = np.array(shape[0]['coordinates'][0], dtype=np.float32)
+        polygons_dict[idx] = poly
+
+    # Sort polygons dict by key
+    polygons_dict = dict([(key, polygons_dict[key]) for key in sorted(polygons_dict.keys())])
+
+    return polygons_dict
+

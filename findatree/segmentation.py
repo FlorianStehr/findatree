@@ -13,8 +13,10 @@ import skimage.segmentation as segmentation
 import skimage.feature as feature
 
 import findatree.geo_to_image as geo_to_image
+import findatree.transformations as transformations
 
 importlib.reload(geo_to_image)
+importlib.reload(transformations)
 
 #%%
 def _local_thresholding(img_in: np.ndarray, mask: np.ndarray, width: float, px_width: float, blur=False) -> np.ndarray:
@@ -183,30 +185,7 @@ def _watershed_by_peaks_in_disttrafo(
 
 
 #%%
-def labels_to_bounds(labels: np.ndarray) -> np.ndarray:
-    """Return boundaries of labels.
-
-    Parameters
-    ----------
-    labels : np.ndarray
-        Image where connected components are assigned with one unique integer, i.e. labels.
-
-    Returns
-    -------
-    np.ndarray
-        Boundaries of all labels as np.uint8 array. Boundaries are assigned with 1, rest is zero.
-    """
-    bounds = segmentation.find_boundaries(
-        labels,
-        connectivity=1,
-        mode='outer',
-    ).astype(np.uint8)
-    bounds = morph.thin(bounds)
-
-    return bounds
-
-#%%
-def segment(
+def watershed(
     cs: Dict,
     params_cs: Dict,
     params: Dict,
@@ -332,27 +311,25 @@ def segment(
         label_min_area=params['water_label_min_area'],
     )
 
-    ######################################### (6) Resize labels/bounds/masks
+    ######################################### (6) Resize labels & global mask to original channel size
     labels = transform.resize(labels_water, params_cs['shape'], order=0, preserve_range=True)
     mask_global = transform.resize(mask_global_water, params_cs['shape'], order=0, preserve_range=True)
-    mask_seed = transform.resize(mask_seed_water, params_cs['shape'], order=0, preserve_range=True)
-    bounds= labels_to_bounds(labels)
 
     ######################################### (7) Prepare returns
-    # Prepare return channels
-    cs_segment = {}
-    cs_segment['labels'] = labels
-    cs_segment['mask_global'] = mask_global
-    cs_segment['bounds'] = bounds
-    cs_segment['mask_seed'] = mask_seed
+    # Transform labeled image to polygons
+    polygons = transformations.labelimage_to_polygons(labels)
 
-    # Add date of processing to params
-    date_time = time.strftime('%Y%m%d-%H%M%S', time.localtime())
-    date_time = date_time[2:]
-    params['date_time'] = date_time
+    # Prepare return crowns dictionary
+    crowns = {}
+    crowns['polygons'] = polygons
+    crowns['features'] = {}
 
-    # Add area code
+    # Prepare parameters
+    params['date_time_polygons'] = transformations.current_datetime()
     params['tnr'] = params_cs['tnr']
+    params['affine'] = params_cs['affine']
+    params['origin'] = 'water'
+    params['number_crowns'] = len(crowns['polygons'])
 
     # Sort parameters according to key
     params = dict([(key, params[key]) for key in sorted(params.keys())])
@@ -362,5 +339,5 @@ def segment(
     print('Parameters:')
     for k in params: print(f"  {k:<30}: {params[k]}")
 
-    return cs_segment, params
+    return crowns, params
 

@@ -542,9 +542,8 @@ def channels_load(
     params['px_width'] = params_sec['px_width']
     params['shape'] = params_sec['shape']
     
-    # Sort params thematically
-    key_order = ['date_time', 'tnr', 'path_dsm', 'path_dtm', 'path_ortho', 'crs', 'px_width_reproject', 'downscale', 'px_width', 'shape', 'affine']
-    params = {k: params[k] for k in key_order}
+    # Sort parameters according to key
+    params = dict([(key, params[key]) for key in sorted(params.keys())])
 
     # Print parameters
     print('-----------')

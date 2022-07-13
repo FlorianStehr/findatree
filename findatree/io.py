@@ -130,12 +130,9 @@ def channels_to_hdf5(channels: Dict , params_channels: Dict, dir_name: str=r'C:\
 
     # Open file for writing if exists, create otherwise.
     with h5py.File(path, 'a') as f:
-        '''Three possible cases to cover:
-            1. Channels group EXISTS ...
-                a. ... and dsm, dtm and ortho path attributes are NOT the same as in params_channels -> Raise Error
-                b. ... and dsm, dtm and ortho path attributes ARE the same as in params_channels -> Continue and overwrite 
-            2. Channels group does NOT EXIST -> Write
-        '''
+
+        ########################################### Group
+        # Get pointer to 'channels' group if exists
         if 'channels' in f:
             grp = f.get('channels')
             
@@ -146,21 +143,25 @@ def channels_to_hdf5(channels: Dict , params_channels: Dict, dir_name: str=r'C:\
         else:
             grp = f.create_group('channels')
         
-        # Update all parameters as group attributes
+        ########################################### Group attributes
+        # Delete all old group attributes and ...
+        for key in grp.attrs.keys():
+            del grp.attrs[key]
+
+        # ... assign (new) parameters as group attributes
         for key in params_channels:
             grp.attrs[key] = params_channels[key]
 
-        # Add/update all channel as group datasets
+        ########################################### Group datasets
+        # Delete all old group datasets and ...
+        for key in grp.keys():
+            del grp[key]
+
+        # ... assign each channel as group dataset
         for key in channels:
-            
-            # Overwrite case [1b]
-            if key in grp: 
-                del grp[key]
-                grp.create_dataset(key, data=channels[key])
-            
-            # Write case [2]
-            else:
-                dset = grp.create_dataset(key, data=channels[key])
+            grp.create_dataset(key, data=channels[key])
+
+
         pass
 
 
@@ -195,7 +196,7 @@ def load_shapefile(dir_names: List, params_channels: Dict) -> Tuple[Dict, Dict]:
             
             ##################### Polygons
             # Get shape's polygon
-            poly = np.array(shape.points).T
+            poly = np.array(shape.points, dtype = np.float32).T
 
             # Convert polygon from geo to px coordinates
             poly = np.array(~affine * poly).T
@@ -225,11 +226,21 @@ def load_shapefile(dir_names: List, params_channels: Dict) -> Tuple[Dict, Dict]:
     
     # Create dictionary of parameters
     params = {}
+    params['date_time_polygons'] = transformations.current_datetime()
+    params['date_time_terrestrial'] = transformations.current_datetime()
     params['tnr'] = params_channels['tnr']
     params['affine'] = params_channels['affine']
     params['path_shapes'] = paths['path_shapes']
     params['origin'] = 'human'
     params['number_crowns'] = n_crowns
+
+    # Sort parameters according to key
+    params = dict([(key, params[key]) for key in sorted(params.keys())])
+    
+    # Print parameters
+    print('-----------')
+    print('Parameters:')
+    for k in params: print(f"  {k:<30}: {params[k]}")
 
     return crowns, params
 
@@ -262,41 +273,47 @@ def crowns_to_hdf5(crowns: Dict , params_crowns: Dict, dir_name: str=r'C:\Data\l
     # Open file for writing if exists, create otherwise.
     with h5py.File(path, 'a') as f:
 
+        ######################################### Group
         # Get or create main group
         grp = get_or_create_group(group_name, f)
         
-        # Update all parameters as group attributes
+
+        ######################################### Group attributes
+        # Delete all old group attributes and ...
+        for key in grp.attrs.keys():
+            del grp.attrs[key]
+
+        # ... assign (new) parameters as group attributes 
         for key in params_crowns:
             grp.attrs[key] = params_crowns[key]
-
-        # Add datetime to main group attributes
-        grp.attrs['date_time'] = transformations.current_datetime()
         
-        ########################################### Polygons
+        ########################################### Polygons subgroup
         # Get or create 'polygons' subgroup
         grp = get_or_create_group(group_name + '/polygons', f)
 
-        # Assign polygons as datasets in 'polygons' subgroup
-        for idx, poly in crowns['polygons'].items():
+        
+        # Delete all old polygons subgroup datasets and ...
+        for key in grp.keys():
+            del grp[key]
 
-            # Convert idx to key to string with zero padding
-            key = str(idx).zfill(5)
+        # ... assign polygons as datasets in 'polygons' subgroup
+        for idx, poly in crowns['polygons'].items():  
 
-            # Overwrite or write polygons as datasets
-            if key in grp:
-                del grp[key]
-                grp.create_dataset(key, data = poly)    
-            else:
-                grp.create_dataset(key, data = poly)
+            key = str(idx).zfill(5) # Convert idx to key to string with zero padding
+            grp.create_dataset(key, data = poly)
 
-        ########################################### Features
+        ########################################### Features subgroup
         # Get or create 'features' subgroup
         grp = get_or_create_group(group_name + '/features', f)
 
-        # Assign features as datasets in 'features' subgroup
+        # Assign all features (i.e. feature sets like 'terrestrial or 'photometric') in crowns['features'] as datasets in 'features' subgroup.
         for key, features in crowns['features'].items():
+            
+            # Assert that number of crowns in features are the same as number of crowns in params_crowns
+            message = f"`len(crowns['features'][{key}]` is {features.shape[0]} but `params_crowns['number_crowns']` is {params_crowns['number_crowns']})"
+            assert features.shape[0] == params_crowns['number_crowns'], message
 
-            # Overwrite or write features as dataset
+            # Overwrite (if already exists) or write features as dataset
             if key in grp:
                 del grp[key]
                 dset = grp.create_dataset(key, data = features)    
@@ -313,54 +330,4 @@ def crowns_to_hdf5(crowns: Dict , params_crowns: Dict, dir_name: str=r'C:\Data\l
                 dset.attrs[key] = val
 
                 
-        pass
-
-
-#%%
-def segments_to_hdf5(segments: Dict , params_segments: Dict, dir_name: str=r'C:\Data\lwf\processed') -> None:
-    """Save all segmentation maps in .hdf5 container.
-
-    Group `segments` wil be created in .hdf5 with `channels` as datasets and `params_segments` as group attributes.
-
-    Parameters
-    ----------
-    segments : Dict
-        Dictionary of labels as returned by segmentation.segment()
-    params_segments : Dict
-        Dictionary ofsegmentation parameters as returned by segmentation.segment()
-    dir_name: str
-        Path to directory where .hdf5 is stored
-    """
-    # Define name of .hdf5
-    name = f"tnr{params_segments['tnr']}.hdf5"
-    
-    # Define full path to .hdf5, i.e. directory + name
-    path = os.path.join(dir_name, name)
-
-    # Open file for writing if exists, create otherwise.
-    with h5py.File(path, 'a') as f:
-        '''Two possible cases to cover:
-            1. Segments group EXISTS -> Continue and overwrite 
-            2. Segments group does NOT EXIST -> Write
-        '''
-        if 'segments' in f:
-            grp = f.get('segments')
-        else:
-            grp = f.create_group('segments')
-        
-        # Update all parameters as group attributes
-        for key in params_segments:
-            grp.attrs[key] = params_segments[key]
-
-        # Add/update all channel as group datasets
-        for key in segments:
-
-            # Overwrite case [1]
-            if key in grp: 
-                del grp[key]
-                grp.create_dataset(key, data=segments[key])
-            
-            # Write case [2]
-            else:
-                dset = grp.create_dataset(key, data=segments[key])
         pass
