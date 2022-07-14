@@ -10,6 +10,9 @@ import skimage.morphology
 import rasterio
 import rasterio.features
 
+import shapely.geometry
+
+
 #%%
 def current_datetime() -> str:
     """Create a string of the current date and time.
@@ -187,3 +190,27 @@ def labelimage_to_polygons(img: np.ndarray) -> Dict:
 
     return polygons_dict
 
+
+#%%
+def polygons_to_labelimage(polygons: Dict, shape: Tuple):
+
+    # Init labelimage
+    labelimg = np.zeros(shape, dtype=np.uint16)
+
+    # Prepare shapes as List of (poly, id) for rasterio.features.rasterize()
+    shapes = []
+    for id, poly in polygons.items():
+    
+        # Convert poly to shapely poly
+        poly = shapely.geometry.Polygon(poly)
+
+        # Convert shapely poly to geojson poly
+        poly = shapely.geometry.mapping(poly)
+
+        # Extend shapes with (poly, id) Tuple
+        shapes.extend([(poly, id)])
+
+    # Now burn shapes into empty labelimg
+    rasterio.features.rasterize(shapes, out = labelimg)
+
+    return labelimg

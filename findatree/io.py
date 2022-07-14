@@ -230,6 +230,7 @@ def load_shapefile(dir_names: List, params_channels: Dict) -> Tuple[Dict, Dict]:
     params['date_time_terrestrial'] = transformations.current_datetime()
     params['tnr'] = params_channels['tnr']
     params['affine'] = params_channels['affine']
+    params['shape'] = params_channels['shape']
     params['path_shapes'] = paths['path_shapes']
     params['origin'] = 'human'
     params['number_crowns'] = n_crowns

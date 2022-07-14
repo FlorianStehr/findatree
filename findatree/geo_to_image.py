@@ -159,16 +159,16 @@ def _reproject_to_primary(paths_dict: Dict, px_width: float) -> Tuple[Dict, Dict
                     resampling=Resampling.nearest
                 )
                 
-                # Assing NaNs to saturated values within source dtype
-                # try:
-                #     dest_band[dest_band.astype(source_dtype) == np.iinfo(source_dtype).max] = np.nan
-                #     dest_band[dest_band.astype(source_dtype) == np.iinfo(source_dtype).min] = np.nan
-                # except:
-                #     dest_band[dest_band.astype(source_dtype) == np.finfo(source_dtype).max] = np.nan
-                #     dest_band[dest_band.astype(source_dtype) == np.finfo(source_dtype).min] = np.nan
+                # Assign zeros to saturated values within source dtype
+                try:
+                    dest_band[dest_band.astype(source_dtype) == np.iinfo(source_dtype).max] = 0
+                    dest_band[dest_band.astype(source_dtype) == np.iinfo(source_dtype).min] = 0
+                except:
+                    dest_band[dest_band.astype(source_dtype) == np.finfo(source_dtype).max] = 0
+                    dest_band[dest_band.astype(source_dtype) == np.finfo(source_dtype).min] = 0
                 
                 # Close small NaN holes in band
-                dest_band = _close_nan_holes(dest_band)[0]
+                # dest_band = _close_nan_holes(dest_band)[0]
 
                 # Assign band to bands
                 dest_bands[:,:,i_raster] = dest_band

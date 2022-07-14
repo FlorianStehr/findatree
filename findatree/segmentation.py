@@ -181,6 +181,9 @@ def _watershed_by_peaks_in_disttrafo(
         mask=mask,
     )
 
+    # Convert labels to np.uint16 dtype
+    labels = labels.astype(np.uint16)
+
     return labels, mask_seed
 
 
@@ -328,6 +331,7 @@ def watershed(
     params['date_time_polygons'] = transformations.current_datetime()
     params['tnr'] = params_cs['tnr']
     params['affine'] = params_cs['affine']
+    params['shape'] = params_cs['shape']
     params['origin'] = 'water'
     params['number_crowns'] = len(crowns['polygons'])
 
