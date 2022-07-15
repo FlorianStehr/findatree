@@ -160,12 +160,13 @@ def _reproject_to_primary(paths_dict: Dict, px_width: float) -> Tuple[Dict, Dict
                 )
                 
                 # Assign zeros to saturated values within source dtype
+                saturation_value = -1e-6
                 try:
-                    dest_band[dest_band.astype(source_dtype) == np.iinfo(source_dtype).max] = 0
-                    dest_band[dest_band.astype(source_dtype) == np.iinfo(source_dtype).min] = 0
+                    dest_band[dest_band.astype(source_dtype) == np.iinfo(source_dtype).max] = saturation_value
+                    dest_band[dest_band.astype(source_dtype) == np.iinfo(source_dtype).min] = saturation_value
                 except:
-                    dest_band[dest_band.astype(source_dtype) == np.finfo(source_dtype).max] = 0
-                    dest_band[dest_band.astype(source_dtype) == np.finfo(source_dtype).min] = 0
+                    dest_band[dest_band.astype(source_dtype) == np.finfo(source_dtype).max] = saturation_value
+                    dest_band[dest_band.astype(source_dtype) == np.finfo(source_dtype).min] = saturation_value
                 
                 # Close small NaN holes in band
                 # dest_band = _close_nan_holes(dest_band)[0]
@@ -386,9 +387,11 @@ def _channels_primary_to_secondary(channels_prim: Dict, params_prim: Dict) -> Tu
     channels['chm'] = (channels_prim['dsm'] - channels_prim['dtm']).astype(np.float32)
 
     # Vegetation indices
-    channels['ndvi'] = (channels['nir'] - channels['red']) / (channels['nir'] + channels['red'])
-    channels['ndvire'] = (channels['re'] - channels['red']) / (channels['re'] + channels['red'])
-    channels['ndre'] = (channels['nir'] - channels['re']) / (channels['nir'] + channels['re'])
+    with np.errstate(divide='ignore', invalid='ignore'):  # Avoid division by zero warnings, in this case NaNs will be assigned
+
+        channels['ndvi'] = (channels['nir'] - channels['red']) / (channels['nir'] + channels['red'])
+        channels['ndvire'] = (channels['re'] - channels['red']) / (channels['re'] + channels['red'])
+        channels['ndre'] = (channels['nir'] - channels['re']) / (channels['nir'] + channels['re'])
 
     # RGB
     rgb = np.zeros((params_prim['shape'][0], params_prim['shape'][1], 3), dtype=np.float32)

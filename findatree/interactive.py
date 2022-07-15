@@ -177,7 +177,7 @@ class Plotter:
         return fig
 
 #%%
-    def figures_add_rgb(self, perc:float = 1):
+    def figures_add_rgb(self, perc:float = 0.5):
         
         # Add figure
         fig = self._figure_create('fig_rgb')
@@ -214,7 +214,7 @@ class Plotter:
         
 
 #%%
-    def figures_add_gray(self, channel_name: str, perc: float = 0.5):
+    def figures_add_gray(self, channel_name: str, perc: float = 0.25):
         
         # Add figure
         fig = self._figure_create(f"fig_{channel_name}")

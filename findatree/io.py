@@ -64,7 +64,7 @@ def _find_paths_in_dirs(
     if tnr_number is None:
         print('No tnr found, displaying all available files:')
         for p in paths: print('  ' + p)
-        print()
+        raise FileNotFoundError('Specific tnr number must be specified.')
 
     # Define tnr_pattern
     tnr_number = str(tnr_number)
@@ -160,7 +160,6 @@ def channels_to_hdf5(channels: Dict , params_channels: Dict, dir_name: str=r'C:\
         # ... assign each channel as group dataset
         for key in channels:
             grp.create_dataset(key, data=channels[key])
-
 
         pass
 
@@ -332,3 +331,25 @@ def crowns_to_hdf5(crowns: Dict , params_crowns: Dict, dir_name: str=r'C:\Data\l
 
                 
         pass
+
+#%%
+def load_hdf5(path: str, groups: List = ['channels', 'crowns_human', 'crowns_water']) -> Dict:
+
+    def visit_func(name, node) :
+        print ('Full object pathname is:', node.name)
+        if isinstance(node, h5py.Group) :
+            print ('Object:', name, 'is a Group\n')
+        elif isinstance(node, h5py.Dataset) :
+            print ('Object:', name, 'is a Dataset\n')
+        else :
+            print ('Object:', name, 'is an unknown type\n')
+
+    out = {}
+    out_params = {}
+    with h5py.File(path, 'r') as f:
+        
+        for name in groups:
+            print(f[name].visititems(visit_func))
+
+
+    pass
