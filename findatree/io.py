@@ -2,14 +2,23 @@ from typing import Dict, List, Tuple
 import importlib
 import os
 import re
-import glob
 import h5py
 import numpy as np
 import shapefile
-import rasterio
+from tqdm import tnrange
 
 import findatree.transformations as transformations
 importlib.reload(transformations)
+
+def find_all_tnrs_in_dir(dir_name):
+
+    # Get all file names in dir
+    file_names = [file for file in os.listdir(dir_name)]
+    
+    # Extract the five digit tnr number of all file names
+    tnrs = [re.findall(r"tnr_\d{5}_", name, re.IGNORECASE)[0][4:-1] for name in file_names]
+
+    return tnrs
 
 
 #%%
@@ -325,31 +334,75 @@ def crowns_to_hdf5(crowns: Dict , params_crowns: Dict, dir_name: str=r'C:\Data\l
             features_attrs['names'] = [name for name in features.dtype.names]
             features_attrs['dtypes'] = [str(features.dtype[i]) for i in range(len(features.dtype))]
 
-            # Write attributes to features dataset
-            for key, val in features_attrs.items():
-                dset.attrs[key] = val
+            # Write feature parameters into main group attributes
+            grp = get_or_create_group(group_name, f)
+            for key_attr, val_attr in features_attrs.items():
+                grp.attrs['features_' + key + '_' + key_attr] = val_attr
 
                 
         pass
 
-#%%
-def load_hdf5(path: str, groups: List = ['channels', 'crowns_human', 'crowns_water']) -> Dict:
 
-    def visit_func(name, node) :
-        print ('Full object pathname is:', node.name)
-        if isinstance(node, h5py.Group) :
-            print ('Object:', name, 'is a Group\n')
-        elif isinstance(node, h5py.Dataset) :
-            print ('Object:', name, 'is a Dataset\n')
-        else :
-            print ('Object:', name, 'is an unknown type\n')
+#%% 
+def load_hdf5(path: str, groups: List = ['channels', 'crowns_human', 'crowns_water'], features_only = False) -> Tuple[Dict, Dict]:
 
-    out = {}
-    out_params = {}
+    # Initialize data and parameters dictionary
+    data = {}
+    data_params = {}
+
     with h5py.File(path, 'r') as f:
         
-        for name in groups:
-            print(f[name].visititems(visit_func))
+        for group in groups:
 
+            ################################ Channels
+            if group == 'channels':
+                try: 
+                    # Get `channels` group pointer
+                    grp = f.get('channels')
+                    # Assign `channels` datasets as dict to data
+                    data['channels'] = dict([(key, grp.get(key)[()]) for key in grp.keys()])
+                    # Assign `channels` attributes as dict to data_params
+                    data_params['channels'] = dict([(key, grp.attrs[key]) for key in grp.attrs.keys()])
+                except:
+                    raise Warning(f"Group `{group}` not found.")
 
-    pass
+            ################################ Crowns
+            if bool(re.search('crowns_*', group)):
+                
+                try:
+                    # Get crowns group pointer
+                    grp = f.get(group)
+                    # Assign `crowns_*` attributes to params as dict
+                    data_params[group] = dict([(key, grp.attrs[key]) for key in grp.attrs.keys()])
+                    # Initialize crowns sub-dictionary
+                    data_crowns = {}
+                    
+                    ################################ Features sub-group
+                    # Get features sub-group pointer
+                    grp = f.get(group + '/features')
+                    # Get features as dict
+                    features = dict([(key, grp.get(key)[()]) for key in grp.keys()])
+                    # Convert features to numpy arrays with correct dtype
+                    for key, val in features.items():
+                        features[key] = np.array(val, dtype=val.dtype)
+                    # Assign features to crowns sub-dictionary
+                    data_crowns['features'] = features
+
+                    ################################ Polygons sub-group
+                    # Assign polygons datasets
+                    if not features_only:
+                        # Get polygons sub-group pointer
+                        grp = f.get(group + '/polygons')
+                        # Get features as dict
+                        polygons = dict([(int(key), grp.get(key)[()]) for key in grp.keys()])
+                        # Assign polygons to crowns sub-dictionary
+                        data_crowns['polygons'] = polygons
+                
+                    
+                    # Assign crowns sub-dictionary to data
+                    data[group] = data_crowns
+
+                except:
+                    raise Warning(f"Group `{group}` not found.")
+                
+    return data, data_params
