@@ -11,12 +11,15 @@ import findatree.transformations as transformations
 importlib.reload(transformations)
 
 def find_all_tnrs_in_dir(dir_name):
-
+    
     # Get all file names in dir
     file_names = [file for file in os.listdir(dir_name)]
     
     # Extract the five digit tnr number of all file names
-    tnrs = [re.findall(r"tnr_\d{5}_", name, re.IGNORECASE)[0][4:-1] for name in file_names]
+    tnrs = [re.findall(r"tnr_\d{5}", name, re.IGNORECASE)[0][4:] for name in file_names]
+
+    # Convert tnrs from strings to integers
+    tnrs = [int(tnr) for tnr in tnrs]
 
     return tnrs
 
@@ -174,7 +177,7 @@ def channels_to_hdf5(channels: Dict , params_channels: Dict, dir_name: str=r'C:\
 
 
 #%%
-def load_shapefile(dir_names: List, params_channels: Dict) -> Tuple[Dict, Dict]:
+def load_shapefile(dir_names: List, params_channels: Dict, verbose: bool = True) -> Tuple[Dict, Dict]:
 
     # Search for paths to wanted files in given directories
     paths = _find_paths_in_dirs(dir_names, params_channels['tnr'])
@@ -247,9 +250,10 @@ def load_shapefile(dir_names: List, params_channels: Dict) -> Tuple[Dict, Dict]:
     params = dict([(key, params[key]) for key in sorted(params.keys())])
     
     # Print parameters
-    print('-----------')
-    print('Parameters:')
-    for k in params: print(f"  {k:<30}: {params[k]}")
+    if verbose:
+        print('-----------')
+        print('Parameters:')
+        for k in params: print(f"  {k:<30}: {params[k]}")
 
     return crowns, params
 

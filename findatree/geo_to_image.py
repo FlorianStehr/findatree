@@ -466,6 +466,7 @@ def _channels_downscale(channels_sec: Dict, params_sec: Dict, downscale: int = 0
 def channels_load(
     dir_names: List[str],
     params: Dict,
+    verbose: bool = True,
     ) -> Tuple[Dict, Dict]:
     """Reproject dsm, dtm and ortho rasters to of same area code to same intersection and resolution and convert/normalize to secondary channels.
 
@@ -482,7 +483,9 @@ def channels_load(
     params : Dict
         * px_width [float]: Reprojection pixel width in meters, by default 0.2.
         * downscale [int]: Additionaly downscale px_width after reprojection by factor `2**(downscale)` using gaussian image pyramids.
-
+    verbose: bool
+        Print parameters at end of execution, by default True.
+        
     Returns
     -------
     Tuple[Dict, Dict]
@@ -549,8 +552,9 @@ def channels_load(
     params = dict([(key, params[key]) for key in sorted(params.keys())])
 
     # Print parameters
-    print('-----------')
-    print('Parameters:')
-    for k in params: print(f"  {k:<30}: {params[k]}")
+    if verbose:
+        print('-----------')
+        print('Parameters:')
+        for k in params: print(f"  {k:<30}: {params[k]}")
     
     return channels, params

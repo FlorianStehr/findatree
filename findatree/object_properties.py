@@ -27,7 +27,7 @@ def labels_idx(labels_in: np.ndarray) -> List[Tuple[np.ndarray, np.ndarray]]:
     labels_len = np.unique(labels, return_counts=True)[1]
     labels_sortidx = np.argsort(labels)
 
-    # Now loop through each label and get indice
+    # Now loop through each label and get indices
     labels_idx = []
     i0 = 0
     for l in labels_len:

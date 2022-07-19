@@ -331,7 +331,7 @@ class Plotter:
         pass
 
 #%%
-    def create_layout(self):
+    def create_layout(self) -> bokeh.models.Column:
         
         cols = []
 
@@ -363,8 +363,6 @@ class Plotter:
         layout = bokeh.layouts.layout([cols])
         
         return layout 
-
-
 
 #####################################################################
 #####################################################################
@@ -407,5 +405,3 @@ class Plotter:
     #     self.togglers['bounds'] = toggler
 
     #     pass
-
-
