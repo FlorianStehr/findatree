@@ -1,22 +1,16 @@
 from typing import Dict, List, Tuple
-import glob
-import re
-import os
-import time
 import numpy as np
 import importlib
 import rasterio
 from rasterio.warp import reproject, Resampling
 import cv2 as cv
 import skimage.measure as measure
-import skimage.exposure as exposure
 
 # Import findatree modules
-from findatree import object_properties as objprops
 from findatree import io as io
 from findatree import transformations as transformations
 
-importlib.reload(objprops)
+importlib.reload(transformations)
 importlib.reload(io)
 
 
@@ -273,7 +267,7 @@ def _close_nan_holes(img: np.ndarray, max_pxs: int = 200) -> Tuple[np.ndarray, n
     labels = measure.label(mask, background=0, return_num=False, connectivity=1)
 
     # Get indices of ccs 
-    ccs_idx = objprops.labels_idx(labels)
+    ccs_idx = transformations.labelimage_to_idxlist(labels)
 
     # Remove all ccs with len(cc) > max_pxs
     ccs_idx = [cc_idx for cc_idx in ccs_idx if len(cc_idx[0]) <= max_pxs]
