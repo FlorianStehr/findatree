@@ -1,10 +1,10 @@
 from typing import List, Tuple, Dict
 import numpy as np
-
 import skimage.measure
-
 from numpy.lib.recfunctions import unstructured_to_structured
 from tqdm import tqdm
+
+import findatree.transformations as transformations
 
 
 #%%
@@ -16,6 +16,7 @@ def prop_to_areas(prop):
         'area_filled',
     ]
     areas = np.array([prop[area_name] for area_name in area_names])
+
     return areas, area_names
 
 
@@ -30,6 +31,7 @@ def prop_to_distances(prop):
         'feret_diameter_max',
     ]
     distances = np.array([prop[distance_name] for distance_name in distance_names], dtype=np.float32)
+
     return distances, distance_names
 
 #%%
@@ -40,6 +42,7 @@ def prop_to_ratios(prop):
         'solidity',
     ]
     ratios = np.array([prop[ratio_name] for ratio_name in ratio_names], dtype=np.float32)
+
     return ratios, ratio_names
 
 
@@ -56,7 +59,10 @@ def prop_to_intensitycoords(prop, channels, brightness_channel):
     idxs = (idxs[:,0], idxs[:,1])
 
     # Prepare flat array of values of each channel. Row corresponds to channel.
-    channels_vals = np.zeros((len(channel_names), len(idxs[0])), dtype=np.float32)
+    channels_vals = np.zeros(
+        (len(channel_names), len(idxs[0])),
+        dtype=np.float32,
+        )
     for i, key in enumerate(channels):
         img = channels[key]
         channels_vals[i,:] = img[idxs]
@@ -75,6 +81,10 @@ def prop_to_intensitycoords(prop, channels, brightness_channel):
 
     # Get indices where brightness values are above threshold, in channels_vals coordinates.
     brightness_upper_idxs = np.where(brightness_vals > brightness_thresh)[0]
+    
+    # Treat case of zero brightest pixels -> Assign index of maximum value
+    if len(brightness_upper_idxs) == 0:
+        brightness_upper_idxs = [np.argmax(brightness_vals)]
     
     # These are the indices of the brightest pixels, in image coordinates.
     idxs_brightest = (idxs[0][brightness_upper_idxs], idxs[1][brightness_upper_idxs])
@@ -97,24 +107,59 @@ def prop_to_intensitycoords(prop, channels, brightness_channel):
 
     # Add minimum value of each channel
     names.extend(['min_' + name for name in channel_names])
-    data.extend( list( np.nanmin(channels_vals, axis=1)[:] ) )
+    data.extend( list( np.nanmin(channels_vals, axis=1) ) )
 
     # Add maximum value of each channel
     names.extend(['max_' + name for name in channel_names])
-    data.extend( list( np.nanmax(channels_vals, axis=1)[:] ) )
+    data.extend( list( np.nanmax(channels_vals, axis=1) ) )
 
     # Add mean value of each channel
     names.extend(['mean_' + name for name in channel_names])
-    data.extend( list( np.nanmean(channels_vals, axis=1)[:] ) )
+    data.extend( list( np.nanmean(channels_vals, axis=1) ) )
 
     # Add std value of each channel
     names.extend(['std_' + name for name in channel_names])
-    data.extend( list( np.nanstd(channels_vals, axis=1)[:] ) )
+    data.extend( list( np.nanstd(channels_vals, axis=1) ) )
 
     # Add median value of each channel
     names.extend(['median_' + name for name in channel_names])
-    data.extend( list( np.nanmedian(channels_vals, axis=1)[:] ) )
+    data.extend( list( np.nanmedian(channels_vals, axis=1) ) )
 
+    # Add 75 percentile value of each channel
+    names.extend(['perc75_' + name for name in channel_names])
+    data.extend( list( np.nanpercentile(channels_vals, 75, axis=1) ) )
+
+    # Add 25 percentile value of each channel
+    names.extend(['perc25_' + name for name in channel_names])
+    data.extend( list( np.nanpercentile(channels_vals, 25, axis=1) ) )
+
+    # Add (unweighted) center coordinate x in pixels (mean)
+    names.extend(['x_mean'])
+    data.extend( [ np.nanmean(idxs[1] ) ] )
+
+    # Add (unweighted) center coordinate y in pixels (mean)
+    names.extend(['y_mean'])
+    data.extend( [ np.nanmean(idxs[0] ) ] )
+
+    # Add (unweighted) center coordinate x in pixels (mean)
+    names.extend(['x_max_' + name for name in channel_names])
+    data.extend( list( idxs[1][ np.argmax(channels_vals, axis=1) ] ) )
+
+    # Add bounding box minimum in x in pixels
+    names.extend(['x_min_bbox'])
+    data.extend( [ np.nanmin(idxs[1] ) ] )
+
+    # Add bounding box maximum in x in pixels
+    names.extend(['x_max_bbox'])
+    data.extend( [ np.nanmax(idxs[1] ) ] )
+
+    # Add bounding box minimum in y in pixels
+    names.extend(['y_min_bbox'])
+    data.extend( [ np.nanmin(idxs[0] ) ] )
+
+    # Add bounding box maximum in y in pixels
+    names.extend(['y_max_bbox'])
+    data.extend( [ np.nanmax(idxs[0] ) ] )
 
     ############# Brightest pixels in segment
     
@@ -122,55 +167,55 @@ def prop_to_intensitycoords(prop, channels, brightness_channel):
     names.extend(['n_px_brightest'])
     data.append(len(idxs_brightest[0]))
     
-    # Add mean value of each channel over brightest pixels
+    # Add minimum value of each channel of brightest pixels
+    names.extend(['min_brightest_' + name for name in channel_names])
+    data.extend( list( np.nanmin(channels_vals_brightest, axis=1) ) )
+
+    # Add mean value of brightest pixels of each channel 
     names.extend(['mean_brightest_' + name for name in channel_names])
-    data.extend( list( np.nanmean(channels_vals_brightest, axis=1)[:] ) )
+    data.extend( list( np.nanmean(channels_vals_brightest, axis=1) ) )
 
-    # for i, key in enumerate(channel_names):
-        
-        # Get values of one channel
-        # channel_vals = channels_vals[i, :]
+    # Add std value of brightest pixels of each channel
+    names.extend(['std_brightest_' + name for name in channel_names])
+    data.extend( list( np.nanstd(channels_vals_brightest, axis=1) ) )
 
-        # names.extend(['min_' + key])
-        # data.append(np.min(channel_vals))
+    # Add median value of brightest pixels of each channel
+    names.extend(['median_brightest_' + name for name in channel_names])
+    data.extend( list( np.nanmedian(channels_vals_brightest, axis=1) ) )
 
-        # names.extend(['max_' + key])
-        # data.append(np.max(channel_vals))
+    # Add 75 percentile value of brightest pixels of each channel
+    names.extend(['perc75_brightest_' + name for name in channel_names])
+    data.extend( list( np.nanpercentile(channels_vals_brightest, 75, axis=1) ) )
 
-        # names.extend(['mean_' + key])
-        # data.append(np.median(channel_vals))
-        
-        # names.extend(['std_' + key])
-        # data.append(np.std(channel_vals))
+    # Add 25 percentile value of brightest pixels of each channel
+    names.extend(['perc25_brightest_' + name for name in channel_names])
+    data.extend( list( np.nanpercentile(channels_vals_brightest, 25, axis=1) ) )
 
-        # names.extend(['median_' + key])
-        # data.append(np.mean(channel_vals))
+    # Add (unweighted) center coordinate x of brightest pixels in pixels (mean)
+    names.extend(['x_mean_brightest'])
+    data.extend( [ np.nanmean(idxs_brightest[1] ) ] )
 
-        # names.extend(['perc25_' + key])
-        # data.append(np.percentile(channel_vals, 25))
+    # Add (unweighted) center coordinate y of brightest pixels in pixels (mean)
+    names.extend(['y_mean_brightest'])
+    data.extend( [ np.nanmean(idxs_brightest[0] ) ] )
 
-        # names.extend(['perc75_' + key])
-        # data.append(np.percentile(channel_vals, 75))
-        
-        # names.extend(['x_max_' + key])
-        # data.append(idxs[1][np.argmax(channel_vals)])
+    # Add bounding box minimum in x of brightest pixels in pixels
+    names.extend(['x_min_bbox_brightest'])
+    data.extend( [ np.nanmin(idxs_brightest[1] ) ] )
 
-        # names.extend(['y_max_' + key])
-        # data.append(idxs[0][np.argmax(channel_vals)])
+    # Add bounding box maximum in x of brightest pixels in pixels
+    names.extend(['x_max_bbox_brightest'])
+    data.extend( [ np.nanmax(idxs_brightest[1] ) ] )
 
-        # names.extend(['x_com_' + key])
-        # data.append(np.sum(idxs[1] * channel_vals) / np.sum(channel_vals))
+    # Add bounding box minimum in y of brightest pixels in pixels
+    names.extend(['y_min_bbox_brightest'])
+    data.extend( [ np.nanmin(idxs_brightest[0] ) ] )
 
-        # names.extend(['y_com_' + key])
-        # data.append(np.sum(idxs[0] * channel_vals) / np.sum(channel_vals))
+    # Add bounding box maximum in y of brightest pixels in pixels
+    names.extend(['y_max_bbox_brightest'])
+    data.extend( [ np.nanmax(idxs_brightest[0] ) ] )
 
-
-        # names.extend(['mean_darkpx_' + key])
-        # data.append(np.mean(channel_vals[light_lower_idxs]))
-
-        # names.extend(['mean_brightpx_' + key])
-        # data.append(np.mean(channel_vals[light_upper_idxs]))
-
+    ############# Create final output array
 
     data = np.array(data, dtype=np.float32)
 
@@ -219,51 +264,61 @@ def prop_to_allfeatures(prop, channels, px_width, brightness_channel):
 
 def labelimage_extract_features(
     labelimg,
-    channels_in,
+    channels,
     params_channels,
-    include_labels = None,
-    brighntess_channel = 'light',
+    include_ids = None,
+    brightness_channel = 'light',
     ):
-
-    # Copy input channels
-    channels = channels_in.copy()
 
     # Use skimage to get object properties
     props = skimage.measure.regionprops(labelimg, None)
     
     # Only compute props of labels included in include_labels
-    if include_labels is not None:
-        props_include = [prop for prop in props if prop['label'] in include_labels]
+    if include_ids is not None:
+        props_include = [prop for prop in props if prop['label'] in include_ids]
     else:
         props_include = props
 
     # Loop through all labels and extract properties as np.ndarray
     for i, prop in enumerate(tqdm(props_include)):
         
-        if i == 0: # First assignment
+        if i == 0: # First call
             
-            features, names  = prop_to_allfeatures(
+            features_i, names  = prop_to_allfeatures(
                 prop,
                 channels,
                 params_channels['px_width'],
-                brightness_channel = brighntess_channel,
-                )
+                brightness_channel = brightness_channel,
+            )
+            # Init features
+            features = np.zeros((len(props), len(names)), dtype=np.float32)
+            # Assignment to features
+            features[i, :] = features_i
 
-        else:
+        else: # All others
             
-            features_i, names = prop_to_allfeatures(
+            features_i = prop_to_allfeatures(
                 prop,
                 channels,
                 params_channels['px_width'],
-                brightness_channel = brighntess_channel,
-                )
-            
-            features = np.vstack((features, features_i))
+                brightness_channel = brightness_channel,
+                )[0]
+            # Assignment to features
+            features[i, :] = features_i
+
 
 
     # Prepare dtype for conversion of features to structured numpy array
     dtypes = ['<f4' for name in names]
-    dtypes[0] = '<u4'
+    # These fields will be stored as uint16 type
+    names_uitype = ['id', 'x_mean', 'y_mean', 'x_min_bbox', 'x_max_bbox', 'y_min_bbox', 'y_max_bbox']
+    names_uitype.extend(['x_max_' + name for name in channels.keys()])
+    names_uitype.extend(['x_min_' + name for name in channels.keys()])
+
+    # Change float32 to uint16 dtype as respectvie fields
+    for i, name in enumerate(names):
+        if name in names_uitype:
+            dtypes[i] = '<u2'
     dtypes = [(name, dtype) for name, dtype in zip(names, dtypes)]
 
     # Convert features to structures dtype
@@ -271,3 +326,45 @@ def labelimage_extract_features(
 
 
     return features
+
+
+def crowns_add_feaures(
+    channels: Dict,
+    params_channels: Dict,
+    crowns: Dict,
+    params_crowns: Dict,
+    params: Dict = {},
+    ):
+
+    # Define standard parameters
+    params_standard = {
+        'include_ids': None,
+        'brightness_channel' : 'light',
+    }
+    # Assign standard parameters if not given
+    for k in params_standard:
+        if k in params:
+            params[k] = params[k]
+        else:
+            params[k] = params_standard[k]
+
+    # From polygons to labelimage
+    labelimg = transformations.polygons_to_labelimage(crowns['polygons'], params_crowns['shape'])
+
+    # Extract photometric features
+    features = labelimage_extract_features(
+        labelimg,
+        channels,
+        params_channels,
+        include_ids = params['include_ids'],
+        brightness_channel  = params['brightness_channel'],
+        )
+
+    # Assign features to crowns
+    crowns['features']['photometric'] = features
+
+    # Assign parameters
+    params_crowns['date_time_photometric'] = transformations.current_datetime()
+    params_crowns['features_photometric_brightness_channel'] = params['brightness_channel']
+
+    pass

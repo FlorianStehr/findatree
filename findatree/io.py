@@ -288,17 +288,17 @@ def crowns_to_hdf5(crowns: Dict , params_crowns: Dict, dir_name: str=r'C:\Data\l
 
         ######################################### Group
         # Get or create main group
-        grp = get_or_create_group(group_name, f)
+        grp_main = get_or_create_group(group_name, f)
         
 
         ######################################### Group attributes
         # Delete all old group attributes and ...
-        for key in grp.attrs.keys():
-            del grp.attrs[key]
+        for key in grp_main.attrs.keys():
+            del grp_main.attrs[key]
 
         # ... assign (new) parameters as group attributes 
         for key in params_crowns:
-            grp.attrs[key] = params_crowns[key]
+            grp_main.attrs[key] = params_crowns[key]
         
         ########################################### Polygons subgroup
         # Get or create 'polygons' subgroup
@@ -321,7 +321,7 @@ def crowns_to_hdf5(crowns: Dict , params_crowns: Dict, dir_name: str=r'C:\Data\l
 
         # Assign all features (i.e. feature sets like 'terrestrial or 'photometric') in crowns['features'] as datasets in 'features' subgroup.
         for key, features in crowns['features'].items():
-            
+
             # Assert that number of crowns in features are the same as number of crowns in params_crowns
             message = f"`len(crowns['features'][{key}]` is {features.shape[0]} but `params_crowns['number_crowns']` is {params_crowns['number_crowns']})"
             assert features.shape[0] == params_crowns['number_crowns'], message
@@ -339,9 +339,8 @@ def crowns_to_hdf5(crowns: Dict , params_crowns: Dict, dir_name: str=r'C:\Data\l
             features_attrs['dtypes'] = [str(features.dtype[i]) for i in range(len(features.dtype))]
 
             # Write feature parameters into main group attributes
-            grp = get_or_create_group(group_name, f)
             for key_attr, val_attr in features_attrs.items():
-                grp.attrs['features_' + key + '_' + key_attr] = val_attr
+                grp_main.attrs['features_' + key + '_' + key_attr] = val_attr
 
                 
         pass
