@@ -113,7 +113,7 @@ def geojson_records_fields_to_numpy_dtype(fields, include_names: List[str] = Non
         include_names = [f[0] for f in fields[1:]]
 
     # Initialize dtypes with 'id' field
-    dtypes = [('id', 'u4')]
+    dtypes = [('id', 'u2')]
 
     for f in fields[1:]: 
         name = f[0]

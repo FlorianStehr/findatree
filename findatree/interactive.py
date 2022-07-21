@@ -1,3 +1,4 @@
+from cmath import isfinite
 from turtle import width
 from typing import Dict, List, Tuple
 from matplotlib.pyplot import colorbar, figimage
@@ -11,6 +12,7 @@ import bokeh.layouts
 from bokeh.plotting.figure import Figure
 from bokeh.models import Column
 from bokeh.models import Toggle
+from zmq import EVENT_CLOSED
 
 import findatree.transformations as transformations
 import findatree.geo_to_image as geo_to_image
@@ -88,7 +90,7 @@ class Plotter:
         try:
             data[channel_name] = [self.channels[channel_name].copy()]
         except:
-            raise KeyError(f"`{channel_name}` not in self.channels nor in self.segments.")
+            raise KeyError(f"`{channel_name}` not in self.channels")
 
         # Update
         self.source = bokeh.plotting.ColumnDataSource(data=data)
@@ -135,9 +137,10 @@ class Plotter:
         for name in self.show_features:
             for features in features_all.values():
                 try:
-                    patches_data[name] = [feature for feature in features[name]]
+                    patches_data[name] = [feature if np.isfinite(feature) else 'NaN' for feature in features[name]]
+
                 except:
-                    print(f"Field `{name}` could not be assigned to source")
+                    pass
 
         # Update source
         self.source_crowns[params_crowns['origin']] = bokeh.plotting.ColumnDataSource(data=patches_data)

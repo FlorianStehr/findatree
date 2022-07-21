@@ -203,6 +203,8 @@ def load_shapefile(dir_names: List, params_channels: Dict, verbose: bool = True)
         dtype = transformations.geojson_records_fields_to_numpy_dtype(sf.fields, attr_names_include)
         crowns_recs = np.zeros(n_crowns, dtype = dtype)
         
+
+        ##################### Assign polygons and records to crowns
         for idx, shape in enumerate(sf.shapes()):
             
             ##################### Polygons
@@ -229,6 +231,34 @@ def load_shapefile(dir_names: List, params_channels: Dict, verbose: bool = True)
             crowns_recs[idx] = tuple(recs)
 
 
+    ##################### Remove polygons that lie partially outside image extent
+    shape = params_channels['shape']
+
+    # Get indices (for crowns_recs) and keys (for crowns_polys) for polygons that lie partially outside image extent
+    outlier_idxs = []
+    outlier_keys = []
+
+    for idx, (key, poly) in enumerate(crowns_polys.items()):
+
+        # Define bool if poly is completely in image
+        is_in_image = (np.min(poly[:, 0]) >= 0) & (np.min(poly[:, 1]) >= 0)  # Lower
+        is_in_image = is_in_image & (np.max(poly[:, 0]) < shape[1]) & (np.max(poly[:, 0]) < shape[1])  # Upper (poly is x,y <-> column,row)
+
+        if not is_in_image:
+            outlier_idxs.append(idx)
+            outlier_keys.append(key)
+
+    # Remove outliers
+    for key in outlier_keys: 
+        crowns_polys.pop(key)
+    crowns_recs = np.delete(crowns_recs, outlier_idxs, axis=0)
+
+    # Update the number of crowns
+    n_crowns = len(crowns_polys)
+
+
+    ##################### Prepare return values
+
     # Create return dictionary of crowns_polys and crowns_recs
     crowns = {
         'polygons': crowns_polys,
@@ -241,7 +271,7 @@ def load_shapefile(dir_names: List, params_channels: Dict, verbose: bool = True)
     params['date_time_terrestrial'] = transformations.current_datetime()
     params['tnr'] = params_channels['tnr']
     params['affine'] = params_channels['affine']
-    params['shape'] = params_channels['shape']
+    params['shape'] = shape
     params['path_shapes'] = paths['path_shapes']
     params['origin'] = 'human'
     params['number_crowns'] = n_crowns
@@ -290,6 +320,11 @@ def crowns_to_hdf5(crowns: Dict , params_crowns: Dict, dir_name: str=r'C:\Data\l
         # Get or create main group
         grp_main = get_or_create_group(group_name, f)
         
+        # Check if there are any dsets in main group, if True delete them
+        for key, obj in grp_main.items():
+            if isinstance(obj, h5py.Dataset):
+                print(f"Warning: Deleting dataset {obj.name} in main group {grp_main.name}, does not match format.")
+                del grp_main[key]
 
         ######################################### Group attributes
         # Delete all old group attributes and ...

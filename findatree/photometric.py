@@ -1,5 +1,6 @@
 from typing import List, Tuple, Dict
 import numpy as np
+import warnings
 import skimage.measure
 from numpy.lib.recfunctions import unstructured_to_structured
 from tqdm import tqdm
@@ -99,121 +100,126 @@ def prop_to_intensitycoords(prop, channels, brightness_channel):
     data = []
     names = []
 
-    ############# All pixels in segment
-    
-    # Add total number of pixels
-    names.extend(['n_px'])
-    data.append(len(idxs[0]))
+    # This us used to catch all the numpy warnings caused by numpy.nanmean() and alike 
+    # when all values in one crown are NaNs. Can be ignored, because NaNs are assigned that can be filtered out later.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", category=RuntimeWarning)
 
-    # Add minimum value of each channel
-    names.extend(['min_' + name for name in channel_names])
-    data.extend( list( np.nanmin(channels_vals, axis=1) ) )
+        ############# All pixels in segment
+        
+        # Add total number of pixels
+        names.extend(['n_px'])
+        data.append(len(idxs[0]))
 
-    # Add maximum value of each channel
-    names.extend(['max_' + name for name in channel_names])
-    data.extend( list( np.nanmax(channels_vals, axis=1) ) )
+        # Add minimum value of each channel
+        names.extend(['min_' + name for name in channel_names])
+        data.extend( list( np.nanmin(channels_vals, axis=1) ) )
 
-    # Add mean value of each channel
-    names.extend(['mean_' + name for name in channel_names])
-    data.extend( list( np.nanmean(channels_vals, axis=1) ) )
+        # Add maximum value of each channel
+        names.extend(['max_' + name for name in channel_names])
+        data.extend( list( np.nanmax(channels_vals, axis=1) ) )
 
-    # Add std value of each channel
-    names.extend(['std_' + name for name in channel_names])
-    data.extend( list( np.nanstd(channels_vals, axis=1) ) )
+        # Add mean value of each channel
+        names.extend(['mean_' + name for name in channel_names])
+        data.extend( list( np.nanmean(channels_vals, axis=1) ) )
 
-    # Add median value of each channel
-    names.extend(['median_' + name for name in channel_names])
-    data.extend( list( np.nanmedian(channels_vals, axis=1) ) )
+        # Add std value of each channel
+        names.extend(['std_' + name for name in channel_names])
+        data.extend( list( np.nanstd(channels_vals, axis=1) ) )
 
-    # Add 75 percentile value of each channel
-    names.extend(['perc75_' + name for name in channel_names])
-    data.extend( list( np.nanpercentile(channels_vals, 75, axis=1) ) )
+        # Add median value of each channel
+        names.extend(['median_' + name for name in channel_names])
+        data.extend( list( np.nanmedian(channels_vals, axis=1) ) )
 
-    # Add 25 percentile value of each channel
-    names.extend(['perc25_' + name for name in channel_names])
-    data.extend( list( np.nanpercentile(channels_vals, 25, axis=1) ) )
+        # Add 75 percentile value of each channel
+        names.extend(['perc75_' + name for name in channel_names])
+        data.extend( list( np.nanpercentile(channels_vals, 75, axis=1) ) )
 
-    # Add (unweighted) center coordinate x in pixels (mean)
-    names.extend(['x_mean'])
-    data.extend( [ np.nanmean(idxs[1] ) ] )
+        # Add 25 percentile value of each channel
+        names.extend(['perc25_' + name for name in channel_names])
+        data.extend( list( np.nanpercentile(channels_vals, 25, axis=1) ) )
 
-    # Add (unweighted) center coordinate y in pixels (mean)
-    names.extend(['y_mean'])
-    data.extend( [ np.nanmean(idxs[0] ) ] )
+        # Add (unweighted) center coordinate x in pixels (max)
+        names.extend(['x_max_' + name for name in channel_names])
+        data.extend( list( idxs[1][ np.argmax(channels_vals, axis=1) ] ) )
 
-    # Add (unweighted) center coordinate x in pixels (mean)
-    names.extend(['x_max_' + name for name in channel_names])
-    data.extend( list( idxs[1][ np.argmax(channels_vals, axis=1) ] ) )
+        # Add (unweighted) center coordinate x in pixels (mean)
+        names.extend(['x_mean'])
+        data.extend( [ np.mean(idxs[1] ) ] )
 
-    # Add bounding box minimum in x in pixels
-    names.extend(['x_min_bbox'])
-    data.extend( [ np.nanmin(idxs[1] ) ] )
+        # Add (unweighted) center coordinate y in pixels (mean)
+        names.extend(['y_mean'])
+        data.extend( [ np.mean(idxs[0] ) ] )
 
-    # Add bounding box maximum in x in pixels
-    names.extend(['x_max_bbox'])
-    data.extend( [ np.nanmax(idxs[1] ) ] )
+        # Add bounding box minimum in x in pixels
+        names.extend(['x_min_bbox'])
+        data.extend( [ np.min(idxs[1] ) ] )
 
-    # Add bounding box minimum in y in pixels
-    names.extend(['y_min_bbox'])
-    data.extend( [ np.nanmin(idxs[0] ) ] )
+        # Add bounding box maximum in x in pixels
+        names.extend(['x_max_bbox'])
+        data.extend( [ np.max(idxs[1] ) ] )
 
-    # Add bounding box maximum in y in pixels
-    names.extend(['y_max_bbox'])
-    data.extend( [ np.nanmax(idxs[0] ) ] )
+        # Add bounding box minimum in y in pixels
+        names.extend(['y_min_bbox'])
+        data.extend( [ np.min(idxs[0] ) ] )
 
-    ############# Brightest pixels in segment
-    
-    # Add number of brightest pixels
-    names.extend(['n_px_brightest'])
-    data.append(len(idxs_brightest[0]))
-    
-    # Add minimum value of each channel of brightest pixels
-    names.extend(['min_brightest_' + name for name in channel_names])
-    data.extend( list( np.nanmin(channels_vals_brightest, axis=1) ) )
+        # Add bounding box maximum in y in pixels
+        names.extend(['y_max_bbox'])
+        data.extend( [ np.max(idxs[0] ) ] )
 
-    # Add mean value of brightest pixels of each channel 
-    names.extend(['mean_brightest_' + name for name in channel_names])
-    data.extend( list( np.nanmean(channels_vals_brightest, axis=1) ) )
+        ############# Brightest pixels in segment
+        
+        # Add number of brightest pixels
+        names.extend(['n_px_brightest'])
+        data.append(len(idxs_brightest[0]))
+        
+        # Add minimum value of each channel of brightest pixels
+        names.extend(['min_brightest_' + name for name in channel_names])
+        data.extend( list( np.nanmin(channels_vals_brightest, axis=1) ) )
 
-    # Add std value of brightest pixels of each channel
-    names.extend(['std_brightest_' + name for name in channel_names])
-    data.extend( list( np.nanstd(channels_vals_brightest, axis=1) ) )
+        # Add mean value of brightest pixels of each channel 
+        names.extend(['mean_brightest_' + name for name in channel_names])
+        data.extend( list( np.nanmean(channels_vals_brightest, axis=1) ) )
 
-    # Add median value of brightest pixels of each channel
-    names.extend(['median_brightest_' + name for name in channel_names])
-    data.extend( list( np.nanmedian(channels_vals_brightest, axis=1) ) )
+        # Add std value of brightest pixels of each channel
+        names.extend(['std_brightest_' + name for name in channel_names])
+        data.extend( list( np.nanstd(channels_vals_brightest, axis=1) ) )
 
-    # Add 75 percentile value of brightest pixels of each channel
-    names.extend(['perc75_brightest_' + name for name in channel_names])
-    data.extend( list( np.nanpercentile(channels_vals_brightest, 75, axis=1) ) )
+        # Add median value of brightest pixels of each channel
+        names.extend(['median_brightest_' + name for name in channel_names])
+        data.extend( list( np.nanmedian(channels_vals_brightest, axis=1) ) )
 
-    # Add 25 percentile value of brightest pixels of each channel
-    names.extend(['perc25_brightest_' + name for name in channel_names])
-    data.extend( list( np.nanpercentile(channels_vals_brightest, 25, axis=1) ) )
+        # Add 75 percentile value of brightest pixels of each channel
+        names.extend(['perc75_brightest_' + name for name in channel_names])
+        data.extend( list( np.nanpercentile(channels_vals_brightest, 75, axis=1) ) )
 
-    # Add (unweighted) center coordinate x of brightest pixels in pixels (mean)
-    names.extend(['x_mean_brightest'])
-    data.extend( [ np.nanmean(idxs_brightest[1] ) ] )
+        # Add 25 percentile value of brightest pixels of each channel
+        names.extend(['perc25_brightest_' + name for name in channel_names])
+        data.extend( list( np.nanpercentile(channels_vals_brightest, 25, axis=1) ) )
 
-    # Add (unweighted) center coordinate y of brightest pixels in pixels (mean)
-    names.extend(['y_mean_brightest'])
-    data.extend( [ np.nanmean(idxs_brightest[0] ) ] )
+        # Add (unweighted) center coordinate x of brightest pixels in pixels (mean)
+        names.extend(['x_mean_brightest'])
+        data.extend( [ np.mean(idxs_brightest[1] ) ] )
 
-    # Add bounding box minimum in x of brightest pixels in pixels
-    names.extend(['x_min_bbox_brightest'])
-    data.extend( [ np.nanmin(idxs_brightest[1] ) ] )
+        # Add (unweighted) center coordinate y of brightest pixels in pixels (mean)
+        names.extend(['y_mean_brightest'])
+        data.extend( [ np.mean(idxs_brightest[0] ) ] )
 
-    # Add bounding box maximum in x of brightest pixels in pixels
-    names.extend(['x_max_bbox_brightest'])
-    data.extend( [ np.nanmax(idxs_brightest[1] ) ] )
+        # Add bounding box minimum in x of brightest pixels in pixels
+        names.extend(['x_min_bbox_brightest'])
+        data.extend( [ np.min(idxs_brightest[1] ) ] )
 
-    # Add bounding box minimum in y of brightest pixels in pixels
-    names.extend(['y_min_bbox_brightest'])
-    data.extend( [ np.nanmin(idxs_brightest[0] ) ] )
+        # Add bounding box maximum in x of brightest pixels in pixels
+        names.extend(['x_max_bbox_brightest'])
+        data.extend( [ np.max(idxs_brightest[1] ) ] )
 
-    # Add bounding box maximum in y of brightest pixels in pixels
-    names.extend(['y_max_bbox_brightest'])
-    data.extend( [ np.nanmax(idxs_brightest[0] ) ] )
+        # Add bounding box minimum in y of brightest pixels in pixels
+        names.extend(['y_min_bbox_brightest'])
+        data.extend( [ np.min(idxs_brightest[0] ) ] )
+
+        # Add bounding box maximum in y of brightest pixels in pixels
+        names.extend(['y_max_bbox_brightest'])
+        data.extend( [ np.max(idxs_brightest[0] ) ] )
 
     ############# Create final output array
 
@@ -307,7 +313,6 @@ def labelimage_extract_features(
             features[i, :] = features_i
 
 
-
     # Prepare dtype for conversion of features to structured numpy array
     dtypes = ['<f4' for name in names]
     # These fields will be stored as uint16 type
@@ -328,7 +333,7 @@ def labelimage_extract_features(
     return features
 
 
-def crowns_add_feaures(
+def crowns_add_features(
     channels: Dict,
     params_channels: Dict,
     crowns: Dict,
