@@ -286,7 +286,7 @@ def labelimage_extract_features(
         props_include = props
 
     # Loop through all labels and extract properties as np.ndarray
-    for i, prop in enumerate(tqdm(props_include)):
+    for i, prop in enumerate(props_include):
         
         if i == 0: # First call
             

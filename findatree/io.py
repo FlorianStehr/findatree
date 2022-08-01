@@ -4,6 +4,7 @@ import os
 import re
 import h5py
 import numpy as np
+import pandas as pd
 import shapefile
 from tqdm import tnrange
 
@@ -15,11 +16,26 @@ def find_all_tnrs_in_dir(dir_name):
     # Get all file names in dir
     file_names = [file for file in os.listdir(dir_name)]
     
-    # Extract the five digit tnr number of all file names
-    tnrs = [re.findall(r"tnr_\d{5}", name, re.IGNORECASE)[0][4:] for name in file_names]
+    # Extract the two to five digit tnr number of all file names
+    tnrs = [re.findall(r"tnr_\d{2}_", name, re.IGNORECASE) for name in file_names]
+    tnrs.extend( [re.findall(r"tnr_\d{3}_", name, re.IGNORECASE) for name in file_names] )
+    tnrs.extend( [re.findall(r"tnr_\d{4}_", name, re.IGNORECASE) for name in file_names] )
+    tnrs.extend( [re.findall(r"tnr_\d{5}_", name, re.IGNORECASE) for name in file_names] )
+
+    # Remove zero length entries
+    tnrs = [tnr[0] for tnr in tnrs if len(tnr) > 0]
+
+    # Remove the leading 'tnr_'
+    tnrs = [tnr[4:] for tnr in tnrs]
+
+    # Remove the trailing '_'
+    tnrs = [tnr[:-1] for tnr in tnrs]
 
     # Convert tnrs from strings to integers
     tnrs = [int(tnr) for tnr in tnrs]
+
+    # Get unique tnr numbers
+    tnrs = list(np.unique(tnrs))
 
     return tnrs
 
@@ -80,7 +96,7 @@ def _find_paths_in_dirs(
 
     # Define tnr_pattern
     tnr_number = str(tnr_number)
-    tnr_pattern = 'tnr_' + tnr_number
+    tnr_pattern = 'tnr_' + tnr_number + '_'
 
     # Reduce to paths that match `tnr_pattern`
     paths = [p for p in paths if bool(re.search(tnr_pattern, os.path.split(p)[-1], re.IGNORECASE))]
@@ -101,10 +117,9 @@ def _find_paths_in_dirs(
     paths_shape = [p for p in paths if bool(re.search(shape_pattern, os.path.split(p)[-1], re.IGNORECASE))]
 
     # Assert that there is only one valid dsm, dtm and ortho file 
-    assert len(paths_dsm) == 1, f"No file or more than one file with pattern `{dsm_pattern}` found in given directories"
-    assert len(paths_dtm) == 1, f"No file or more than one file with pattern `{dtm_pattern}` found in given directories"
-    assert len(paths_ortho) == 1, f"No file or more than one file with pattern `{ortho_pattern}` found in given directories"
-    assert len(paths_shape) == 1, f"No file or more than one file with pattern `{shape_pattern}*.shp` found in given directories"
+    assert len(paths_dsm) == 1, f"(tnr{tnr_number}) No file or more than one file with pattern `{dsm_pattern}` found in given directories"
+    assert len(paths_dtm) == 1, f"(tnr{tnr_number}) No file or more than one file with pattern `{dtm_pattern}` found in given directories"
+    assert len(paths_ortho) == 1, f"(tnr{tnr_number}) No file or more than one file with pattern `{ortho_pattern}` found in given directories"
 
     # Join tnr number and dsm/dtm/ortho paths
     paths_dict = {
@@ -112,8 +127,11 @@ def _find_paths_in_dirs(
         'path_dsm': paths_dsm[0],
         'path_dtm': paths_dtm[0],
         'path_ortho': paths_ortho[0],
-        'path_shapes': paths_shape[0],
     }
+    try:
+        paths_dict['path_shapes'] = paths_shape[0]
+    except:
+        print(f"Warning: (tnr{tnr_number}) No file or more than one file with pattern `{shape_pattern}.shp` found in given directories")
 
     return paths_dict
 
@@ -231,20 +249,25 @@ def load_shapefile(dir_names: List, params_channels: Dict, verbose: bool = True)
             crowns_recs[idx] = tuple(recs)
 
 
-    ##################### Remove polygons that lie partially outside image extent
+    ##################### Remove polygons and corresponding records that lie partially outside image extent or enclose zero area
     shape = params_channels['shape']
 
-    # Get indices (for crowns_recs) and keys (for crowns_polys) for polygons that lie partially outside image extent
+    # Init outliers
     outlier_idxs = []
     outlier_keys = []
 
+    # Find oultiers
     for idx, (key, poly) in enumerate(crowns_polys.items()):
 
         # Define bool if poly is completely in image
         is_in_image = (np.min(poly[:, 0]) >= 0) & (np.min(poly[:, 1]) >= 0)  # Lower
         is_in_image = is_in_image & (np.max(poly[:, 0]) < shape[1]) & (np.max(poly[:, 0]) < shape[1])  # Upper (poly is x,y <-> column,row)
 
-        if not is_in_image:
+        # Define bool if enclosed area greater zero
+        area_greater_zero = ( np.max(poly[:, 0]) - np.min(poly[:, 0])) * ( np.max(poly[:, 1]) - np.min(poly[:, 1]))
+        area_greater_zero = area_greater_zero > 0
+
+        if (not is_in_image) or (not area_greater_zero):
             outlier_idxs.append(idx)
             outlier_keys.append(key)
 
@@ -382,11 +405,18 @@ def crowns_to_hdf5(crowns: Dict , params_crowns: Dict, dir_name: str=r'C:\Data\l
 
 
 #%% 
-def load_hdf5(path: str, groups: List = ['channels', 'crowns_human', 'crowns_water'], features_only = False) -> Tuple[Dict, Dict]:
+def load_hdf5(
+    path: str,
+    groups: List = ['channels', 'crowns_human', 'crowns_water'],
+    features_only = False,
+    ) -> Tuple[Dict, Dict, str]:
 
+    for group in groups:
+        assert group in ['channels', 'crowns_human', 'crowns_water'], f"Group `{group}` is not a valid group."
     # Initialize data and parameters dictionary
     data = {}
-    data_params = {}
+    params_data = {}
+    info = ''
 
     with h5py.File(path, 'r') as f:
         
@@ -400,9 +430,9 @@ def load_hdf5(path: str, groups: List = ['channels', 'crowns_human', 'crowns_wat
                     # Assign `channels` datasets as dict to data
                     data['channels'] = dict([(key, grp.get(key)[()]) for key in grp.keys()])
                     # Assign `channels` attributes as dict to data_params
-                    data_params['channels'] = dict([(key, grp.attrs[key]) for key in grp.attrs.keys()])
+                    params_data['channels'] = dict([(key, grp.attrs[key]) for key in grp.attrs.keys()])
                 except:
-                    raise Warning(f"Group `{group}` not found.")
+                    info += f"Warning: Group `{group}` not found under path: {path}\n"
 
             ################################ Crowns
             if bool(re.search('crowns_*', group)):
@@ -411,36 +441,204 @@ def load_hdf5(path: str, groups: List = ['channels', 'crowns_human', 'crowns_wat
                     # Get crowns group pointer
                     grp = f.get(group)
                     # Assign `crowns_*` attributes to params as dict
-                    data_params[group] = dict([(key, grp.attrs[key]) for key in grp.attrs.keys()])
+                    params_data[group] = dict([(key, grp.attrs[key]) for key in grp.attrs.keys()])
                     # Initialize crowns sub-dictionary
                     data_crowns = {}
                     
                     ################################ Features sub-group
-                    # Get features sub-group pointer
-                    grp = f.get(group + '/features')
-                    # Get features as dict
-                    features = dict([(key, grp.get(key)[()]) for key in grp.keys()])
-                    # Convert features to numpy arrays with correct dtype
-                    for key, val in features.items():
-                        features[key] = np.array(val, dtype=val.dtype)
-                    # Assign features to crowns sub-dictionary
-                    data_crowns['features'] = features
+                    try:
+                        # Get features sub-group pointer
+                        grp = f.get(group + '/features')
+                        # Get features as dict
+                        features = dict([(key, grp.get(key)[()]) for key in grp.keys()])
+                        # Convert features to numpy arrays with correct dtype
+                        for key, val in features.items():
+                            features[key] = np.array(val, dtype=val.dtype)
+                        # Assign features to crowns sub-dictionary
+                        data_crowns['features'] = features
+                    except:
+                        info += f"Warning: Group `{group + '/features'}` not found under path: {path}\n"
 
                     ################################ Polygons sub-group
                     # Assign polygons datasets
                     if not features_only:
-                        # Get polygons sub-group pointer
-                        grp = f.get(group + '/polygons')
-                        # Get features as dict
-                        polygons = dict([(int(key), grp.get(key)[()]) for key in grp.keys()])
-                        # Assign polygons to crowns sub-dictionary
-                        data_crowns['polygons'] = polygons
-                
+                        try:
+                            # Get polygons sub-group pointer
+                            grp = f.get(group + '/polygons')
+                            # Get features as dict
+                            polygons = dict([(int(key), grp.get(key)[()]) for key in grp.keys()])
+                            # Assign polygons to crowns sub-dictionary
+                            data_crowns['polygons'] = polygons
+                        except:
+                           exceptions += f"Warning: Group `{group + '/polygons'}` not found under path: {path}\n"
                     
                     # Assign crowns sub-dictionary to data
                     data[group] = data_crowns
+                    
+                    # Add info to params
+                    params_data['io.load_hdf5()_info'] = info
 
                 except:
-                    raise Warning(f"Group `{group}` not found.")
+                    info += f"Warning: Group `{group}` not found under path: {path}\n"
                 
-    return data, data_params
+    return data, params_data
+
+
+#%%
+def allhdf5s_crowns_features_to_dataframe(
+    dir_hdf5s: str,
+    crowns_type = 'crowns_human',
+    ) -> pd.DataFrame:
+    
+    assert crowns_type in ['crowns_human', 'crowns_water'], f"`{crowns_type}` is not a valid crowns_type."
+    
+    # Get paths to all available hdf5 files
+    paths = [os.path.join(dir_hdf5s, name) for name in os.listdir(dir_hdf5s) if os.path.splitext(name)[-1] == '.hdf5']
+
+    params_features = {}
+    features_terr = {}
+    features_photo = {}
+
+    for path in paths:
+
+        # Load crowns_type group features only in each hdf5
+        data, params_data = load_hdf5(path, groups = [crowns_type], features_only=True)
+        
+        # Try to get tnr and crowns parameters
+        try:
+            tnr = int(params_data[crowns_type]['tnr'])
+            params_features[tnr] = params_data[crowns_type]
+        except:
+            pass
+
+        # Try to add photometric & terrestrial features to respective list
+        try:
+            features_terr[tnr] = pd.DataFrame( data[crowns_type]['features']['photometric'] ).assign(tnr = tnr)
+        except:
+            pass
+        try:
+            features_photo[tnr] = pd.DataFrame( data[crowns_type]['features']['terrestrial'] ).assign(tnr = tnr)
+        except:
+            pass
+    
+    # Collect info for which tnr there are no combined photometric and terrestrial features
+    info = []
+    for key in features_terr:
+        if key not in features_photo.keys():
+            info.append( f"tnr{key}: Only terr. features." )
+    for key in features_photo:
+        if key not in features_terr.keys():
+            info.append( f"tnr{key}: Only photo. features." )
+    
+    params_features['io.allhdf5s_crowns_features_to_dataframe()_info'] = info
+
+    # Combine terrestrial features
+    features_terr_df = pd.concat([f for f in features_terr.values()], axis = 0)
+    features_terr_df.reset_index(inplace=True, drop=True)
+
+    # Combine photometric features
+    features_photo_df = pd.concat([f for f in features_photo.values()], axis = 0)
+    features_photo_df.reset_index(inplace=True, drop=True)
+
+    # Now merge terrestrial & photometric features on [tnr, id]
+    features = pd.merge(
+        features_terr_df,
+        features_photo_df,
+        on = ['tnr','id'],
+        how='inner',
+    )
+
+
+    return features, params_features
+
+#%%
+# def allhdf5s_crowns_features_to_dataframe(
+#     dir_hdf5s: str,
+#     crowns_type = 'crowns_human',
+#     ) -> pd.DataFrame:
+    
+#     assert crowns_type in ['crowns_human', 'crowns_water'], f"`{crowns_type}` is not a valid crowns_type."
+    
+#     # Get paths to all available hdf5 files
+#     paths = [os.path.join(dir_hdf5s, name) for name in os.listdir(dir_hdf5s) if os.path.splitext(name)[-1] == '.hdf5']
+
+#     # Init list of features, elements will pd.DataFrames
+#     feats_terr = []
+#     feats_photo = []
+#     # Init list of features keys which will correspond to tnr identifier
+#     feats_keys = []
+#     # Init dict of combined crown parameters
+#     params_crowns = {}
+
+#     for path in paths:
+        
+#         # Load crowns_type group features only in each hdf5
+#         data, params_data = load_hdf5(path, groups = [crowns_type], features_only=True)
+        
+#         # Try to append to photometric feature to list
+#         try:
+#             feats_photo.append( pd.DataFrame(data[crowns_type]['features']['photometric']) )
+#         except:
+#             feats_photo.append( pd.DataFrame([]))
+#             print(f"Warning: Group `{crowns_type + '/features/photometric'}` not found under path: {path}")
+
+#         if crowns_type == 'crowns_human':
+#             # Try to append to terrestrial feature to list
+#             try:
+#                 feats_terr.append( pd.DataFrame(data[crowns_type]['features']['terrestrial']) )
+#             except:
+#                 feats_terr.append( pd.DataFrame([]))
+#                 print(f"Warning: Group `{'features/terrestrial'}` not found under path: {path}")
+        
+#         try:
+#             # Append keys == tnr identifiers to list
+#             feats_keys.append(int(params_data[crowns_type]['tnr']))
+            
+#             # Add crown_type group parameters to combined parameters under key tnr
+#             params_crowns[int(params_data[crowns_type]['tnr'])] = params_data[crowns_type]
+
+#         except:
+#             feats_keys.append('0')
+#             params_crowns[0] = {}
+
+
+#     ############## Combine photometric features
+#     # Combine feats lists to one pd.DataFrame containing all tnrs
+#     df_photo = pd.concat(
+#         feats_photo,
+#         keys=feats_keys,
+#         names=['tnr'],
+#         )
+#     # Convert MultiIndex pd.DataFrame to standard pd.DataFrame by resetting tnr identifiers as index
+#     df_photo.reset_index(level=['tnr'], inplace=True)
+#     # Continuous relabeling of index
+#     df_photo.reset_index(inplace=True, drop=True)
+#     # Return df will be df_photo
+#     df_combi = df_photo.copy()
+
+#     if crowns_type == 'crowns_human':
+
+#         ############## Combine terrestrial features
+#         # Combine feats lists to one pd.DataFrame containing all tnrs
+#         df_terr = pd.concat(
+#             feats_terr,
+#             keys=feats_keys,
+#             names=['tnr'],
+#             )
+#         # Convert MultiIndex pd.DataFrame to standard pd.DataFrame by resetting tnr identifiers as index
+#         df_terr.reset_index(level=['tnr'], inplace=True)
+#         # Continuous relabeling of index
+#         df_terr.reset_index(inplace=True, drop=True)
+#         # Drop tnr number and id to prevent double entry
+#         df_terr.drop(columns=['tnr', 'id'], inplace=True)
+
+#         ############## Combine terrestic and photometric features to return df
+#         assert len(df_terr) == len(df_photo), "Terrestric and photometric features do not contain same number of crowns"
+#         df_combi = pd.concat(
+#             [df_terr, df_photo],
+#             axis=1,  
+#         )
+#         # Remove entries with tnr of 0
+#         df_combi = df_combi.query('tnr > 0')
+
+#     return df_combi, params_crowns

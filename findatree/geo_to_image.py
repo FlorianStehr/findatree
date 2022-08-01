@@ -380,6 +380,11 @@ def _channels_primary_to_secondary(channels_prim: Dict, params_prim: Dict) -> Tu
     # Canopy height model (CHM)
     channels['chm'] = (channels_prim['dsm'] - channels_prim['dtm']).astype(np.float32)
 
+    # Set all below zero values to zero
+    for key in channels:
+        img = channels[key]
+        img[img <= 0] = 0
+
     # Vegetation indices
     with np.errstate(divide='ignore', invalid='ignore'):  # Avoid division by zero warnings, in this case NaNs will be assigned
 
