@@ -356,6 +356,11 @@ def crowns_add_features(
     # From polygons to labelimage
     labelimg = transformations.polygons_to_labelimage(crowns['polygons'], params_crowns['shape'])
 
+    # Check if vegetation indices and hls images are in channels if not extend
+    names_needed = ['ndvi', 'ndvire' ,'ndre' , 'hue', 'light', 'sat']
+    if not np.all([name in channels.keys() for name in names_needed]):
+        transformations.channels_extend(channels)
+
     # Extract photometric features
     features = labelimage_extract_features(
         labelimg,

@@ -11,25 +11,29 @@ from tqdm import tnrange
 import findatree.transformations as transformations
 importlib.reload(transformations)
 
-def find_all_tnrs_in_dir(dir_name):
-    
+def find_all_tnrs_in_dir(
+    dir_name,
+    tnr_pattern_lead: str = 'tnr_',
+    tnr_pattern_trail: str = '_',
+    ):
+
     # Get all file names in dir
     file_names = [file for file in os.listdir(dir_name)]
     
     # Extract the two to five digit tnr number of all file names
-    tnrs = [re.findall(r"tnr_\d{2}_", name, re.IGNORECASE) for name in file_names]
-    tnrs.extend( [re.findall(r"tnr_\d{3}_", name, re.IGNORECASE) for name in file_names] )
-    tnrs.extend( [re.findall(r"tnr_\d{4}_", name, re.IGNORECASE) for name in file_names] )
-    tnrs.extend( [re.findall(r"tnr_\d{5}_", name, re.IGNORECASE) for name in file_names] )
+    tnrs = [re.findall(tnr_pattern_lead + r"\d{2}" + tnr_pattern_trail, name, re.IGNORECASE) for name in file_names]
+    tnrs.extend( [re.findall(tnr_pattern_lead + r"\d{3}" + tnr_pattern_trail, name, re.IGNORECASE) for name in file_names] )
+    tnrs.extend( [re.findall(tnr_pattern_lead + r"\d{4}" + tnr_pattern_trail, name, re.IGNORECASE) for name in file_names] )
+    tnrs.extend( [re.findall(tnr_pattern_lead + r"\d{5}" + tnr_pattern_trail, name, re.IGNORECASE) for name in file_names] )
 
     # Remove zero length entries
     tnrs = [tnr[0] for tnr in tnrs if len(tnr) > 0]
 
     # Remove the leading 'tnr_'
-    tnrs = [tnr[4:] for tnr in tnrs]
+    tnrs = [tnr[len(tnr_pattern_lead):] for tnr in tnrs]
 
     # Remove the trailing '_'
-    tnrs = [tnr[:-1] for tnr in tnrs]
+    tnrs = [tnr[:-len(tnr_pattern_trail)] for tnr in tnrs]
 
     # Convert tnrs from strings to integers
     tnrs = [int(tnr) for tnr in tnrs]
@@ -152,6 +156,13 @@ def channels_to_hdf5(channels: Dict , params_channels: Dict, dir_name: str=r'C:\
     dir_name: str
         Path to directory where .hdf5 is stored.
     """
+
+    # Remove all non-basic channels like 'ndvi', 'light', etc.
+    channels_save = {}
+    for key in channels:
+        if key in ['blue', 'green', 'red', 're', 'nir', 'chm']:
+            channels_save[key] = channels[key].copy()
+
     # Define name of .hdf5
     name = f"tnr{params_channels['tnr']}.hdf5"
     
@@ -188,8 +199,8 @@ def channels_to_hdf5(channels: Dict , params_channels: Dict, dir_name: str=r'C:\
             del grp[key]
 
         # ... assign each channel as group dataset
-        for key in channels:
-            grp.create_dataset(key, data=channels[key])
+        for key in channels_save:
+            grp.create_dataset(key, data=channels_save[key])
 
         pass
 
@@ -314,15 +325,6 @@ def load_shapefile(dir_names: List, params_channels: Dict, verbose: bool = True)
 #%%
 def crowns_to_hdf5(crowns: Dict , params_crowns: Dict, dir_name: str=r'C:\Data\lwf\processed') -> None:
     
-    # Nested function to savely get or create group
-    def get_or_create_group(group_name, file):
-        if group_name in file:
-            grp = file.get(group_name)
-        else:
-            grp = file.create_group(group_name)
-        return grp
-    
-
     # Define name of .hdf5
     name = f"tnr{params_crowns['tnr']}.hdf5"
     
@@ -340,42 +342,38 @@ def crowns_to_hdf5(crowns: Dict , params_crowns: Dict, dir_name: str=r'C:\Data\l
     with h5py.File(path, 'a') as f:
 
         ######################################### Group
-        # Get or create main group
-        grp_main = get_or_create_group(group_name, f)
-        
-        # Check if there are any dsets in main group, if True delete them
-        for key, obj in grp_main.items():
-            if isinstance(obj, h5py.Dataset):
-                print(f"Warning: Deleting dataset {obj.name} in main group {grp_main.name}, does not match format.")
-                del grp_main[key]
+        # Get crowns group, delete all of its subgroups
+        try:
+            # Get main group
+            grp_main = f[group_name]
+            # Delete all the main groups' subgroups
+            for key in grp_main: del grp_main[key]
+            # Now delete main group
+            del f[group_name]
+
+        except:
+            pass
+
+        grp_main = f.create_group(group_name)
 
         ######################################### Group attributes
-        # Delete all old group attributes and ...
-        for key in grp_main.attrs.keys():
-            del grp_main.attrs[key]
-
-        # ... assign (new) parameters as group attributes 
         for key in params_crowns:
             grp_main.attrs[key] = params_crowns[key]
         
         ########################################### Polygons subgroup
-        # Get or create 'polygons' subgroup
-        grp = get_or_create_group(group_name + '/polygons', f)
+        # Create 'polygons' subgroup (main group already deleted!)
+        grp = f.create_group(group_name + '/polygons')
 
-        
-        # Delete all old polygons subgroup datasets and ...
-        for key in grp.keys():
-            del grp[key]
 
-        # ... assign polygons as datasets in 'polygons' subgroup
+        # Assign polygons as datasets in 'polygons' subgroup
         for idx, poly in crowns['polygons'].items():  
 
             key = str(idx).zfill(5) # Convert idx to key to string with zero padding
             grp.create_dataset(key, data = poly)
 
         ########################################### Features subgroup
-        # Get or create 'features' subgroup
-        grp = get_or_create_group(group_name + '/features', f)
+        # Create 'features' subgroup (main group already deleted!)
+        grp = f.create_group(group_name + '/features')
 
         # Assign all features (i.e. feature sets like 'terrestrial or 'photometric') in crowns['features'] as datasets in 'features' subgroup.
         for key, features in crowns['features'].items():
@@ -384,12 +382,8 @@ def crowns_to_hdf5(crowns: Dict , params_crowns: Dict, dir_name: str=r'C:\Data\l
             message = f"`len(crowns['features'][{key}]` is {features.shape[0]} but `params_crowns['number_crowns']` is {params_crowns['number_crowns']})"
             assert features.shape[0] == params_crowns['number_crowns'], message
 
-            # Overwrite (if already exists) or write features as dataset
-            if key in grp:
-                del grp[key]
-                dset = grp.create_dataset(key, data = features)    
-            else:
-                dset = grp.create_dataset(key, data = features)
+            # Write features as dataset
+            grp.create_dataset(key, data = features)
             
             # Define attributes dict for features dataset
             features_attrs = {}

@@ -34,7 +34,7 @@ class Plotter:
         
         # Plot content
         self.channels_downscale = 0
-        self.show_features = ['id', 'bnr', 'ba']
+        self.show_features = ['id', 'ba', 'sst', 'nbv', 'perc25_brightest_ndvi', 'median_brightest_ndvi', 'perc75_brightest_ndvi']
 
         # Style attributes
         self.width = 400

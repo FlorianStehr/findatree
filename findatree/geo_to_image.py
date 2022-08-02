@@ -318,103 +318,55 @@ def _close_nan_holes(img: np.ndarray, max_pxs: int = 200) -> Tuple[np.ndarray, n
 
 #%%
 
-def _channels_primary_to_secondary(channels_prim: Dict, params_prim: Dict) -> Tuple[Dict, Dict]:
+def _channels_normalize(channels_reproject: Dict) -> Dict:
     """Normalize/convert reprojected rasters (primary channels) to secondary channels.
 
     Parameters
     ----------
     channels_prim : Dict
         Dictionary of of primary channels as np.ndarray of dtype=np.float64, as returned by geo_to_image._reproject_to_primary().
-    params_cs_prim : Dict
-        Dictionary of parameters of primary channels, as returned by geo_to_image._reproject_to_primary().
-    downscale : int, optional
-        Pixel downscale factor by using gaussian image pyramids, by default 0.
 
     Returns
     -------
-    Tuple[Dict, Dict]
-        channels: Dict[np.ndarray, ...]
-            Dict. of all normalized primary/secondary channels as np.ndarray of type np.float32.
-            Keys are: ['blue', 'green', 'red', 're', 'nir', 'chm', 'ndvi', 'ndvire', 'ndre', 'RGB', 'rgb', 'h', 'l', 's'].
+    Dict
+        Dict. of normalized reprojected channels as np.ndarray of type np.float32.
+        Keys are: ['blue', 'green', 'red', 're', 'nir', 'chm'].
             
-        params: Dict
-        * px_width_reproject [float]: Pixel width after reprojection in meters, as passed by `params_prim`.
-        * affine [np.ndarray]: Affine geo. transform of all reprojected rasters (see rasterio) as np.ndarray, as passed by `params_prim`.
-        * shape [Tuple]: Shape of image in pixels, as passed by `params_prim`.
-
     Notes:
     ------
-    Primary channels are:
-    * dsm
-    * dtm
-    * ortho: blue, green, red, re, nir
-
-    Secondary channels are:
-    blue, green, red, re, nir, chm, ndvi, ndvire, ndre, RGB, rgb, h, l, s
-
-    Normalization:
-    * blue, green, red, re, nir: `[0,1]`
-    * chm: `dsm - dtm` 
-    * ndvi: `(nir - red) / (nir + red)` in `[-1, 1]`
-    * ndvire: `(re - red) / (re + red)` in `[-1, 1]`
-    * ndre: `(nir - re) / (nir + re)` in `[-1, 1]`
-    * RGB: `(red, green, blue)` RGB image `[0,1]` for each color dimension
-    * rgb: `mean(RGB)` in `[0, 1]`
-    * h: Hue of hls color space in `[0, 360]`
-    * l: Lightness of hls color space in `[0, 1]`
-    * s: Saturation of hls color space in `[0, 1]`
+    Color channels `['blue', 'green', 'red', 're', 'nir']` are normalized to interval [0, 1].
+    Canopy height model `chm` is normalized to interval [0, inf[.
 
     """
     channels = {}
 
     ############################## Primary channel normalization
     # Normalize and convert to float32 dtype
-    channels['blue'] = (channels_prim['blue'] / (2**16 - 1)).astype(np.float32)
-    channels['green'] = (channels_prim['green'] / (2**16 - 1)).astype(np.float32)
-    channels['red'] = (channels_prim['red'] / (2**16 - 1)).astype(np.float32)
-    channels['re'] = (channels_prim['re'] / (2**16 - 1)).astype(np.float32)
-    channels['nir'] = (channels_prim['nir'] / (2**16 - 1)).astype(np.float32)
+    channels['blue'] = (channels_reproject['blue'] / (2**16 - 1)).astype(np.float32)
+    channels['green'] = (channels_reproject['green'] / (2**16 - 1)).astype(np.float32)
+    channels['red'] = (channels_reproject['red'] / (2**16 - 1)).astype(np.float32)
+    channels['re'] = (channels_reproject['re'] / (2**16 - 1)).astype(np.float32)
+    channels['nir'] = (channels_reproject['nir'] / (2**16 - 1)).astype(np.float32)
 
 
     ############################## Secondary channels
     # Canopy height model (CHM)
-    channels['chm'] = (channels_prim['dsm'] - channels_prim['dtm']).astype(np.float32)
+    channels['chm'] = (channels_reproject['dsm'] - channels_reproject['dtm']).astype(np.float32)
 
     # Set all below zero values to zero
     for key in channels:
         img = channels[key]
         img[img <= 0] = 0
 
-    # Vegetation indices
-    with np.errstate(divide='ignore', invalid='ignore'):  # Avoid division by zero warnings, in this case NaNs will be assigned
-
-        channels['ndvi'] = (channels['nir'] - channels['red']) / (channels['nir'] + channels['red'])
-        channels['ndvire'] = (channels['re'] - channels['red']) / (channels['re'] + channels['red'])
-        channels['ndre'] = (channels['nir'] - channels['re']) / (channels['nir'] + channels['re'])
-
-    # RGB
-    rgb = np.zeros((params_prim['shape'][0], params_prim['shape'][1], 3), dtype=np.float32)
-    rgb[:,:,0] = channels['red']
-    rgb[:,:,1] = channels['green']
-    rgb[:,:,2] = channels['blue']
-
-    # HLS
-    hls = cv.cvtColor(rgb, cv.COLOR_RGB2HLS)
-    channels['hue'] = hls[:,:,0]
-    channels['light'] = hls[:,:,1]
-    channels['sat'] = hls[:,:,2]
-
-    # Return parameters as dictionary
-    params = {}
-    params['px_width_reproject'] = params_prim['px_width_reproject']
-    params['affine'] = params_prim['affine']
-    params['shape'] = params_prim['shape']
-
-    return channels, params
+    return channels
 
 
 #%%
-def _channels_downscale(channels_sec: Dict, params_sec: Dict, downscale: int = 0, verbose: bool = True) -> Tuple[Dict, Dict]:
+def _channels_downscale(
+    channels_in: Dict,
+    params_in: Dict,
+    downscale: int = 0,
+    ) -> Tuple[Dict, Dict]:
     """Downscale secondary channels by using gaussian image pyramids
 
     Parameters
@@ -436,8 +388,8 @@ def _channels_downscale(channels_sec: Dict, params_sec: Dict, downscale: int = 0
         * affine [np.ndarray]: Affine geo. transform after downscaling.
         * shape [Tuple]: Shape of image in pixels after downscaling.
     """
-    channels = channels_sec.copy()
-    params = params_sec.copy()
+    channels = channels_in.copy()
+    params = params_in.copy()
 
     if downscale > 0:
         # Loop through every channel
@@ -524,13 +476,16 @@ def channels_load(
     paths_dict = io._find_paths_in_dirs(dir_names, tnr_number=params['tnr'])   
     
     # Reproject dsm, dtm, ortho rasters to same resolution and intersection -> primary channels
-    channels_prim, params_prim = _reproject_to_primary(paths_dict, px_width=params['px_width_reproject'])
+    channels_reprojected, params_reprojected, = _reproject_to_primary(paths_dict, px_width=params['px_width_reproject'])
     
-    # Normalize/Convert primary channels to secondary channels
-    channels, params_sec = _channels_primary_to_secondary(channels_prim, params_prim)
+    # Normalize reprojected channels
+    channels_normalized = _channels_normalize(channels_reprojected)
 
-    # Downscale secondary channels
-    channels, params_sec = _channels_downscale(channels, params_sec, downscale=params['downscale'])
+    # Downscale normalized channels
+    channels_downscaled, params_downscaled = _channels_downscale(channels_normalized, params_reprojected, downscale=params['downscale'])
+    
+    # Final output
+    channels = channels_downscaled
 
     ######################################### (2) Prepare parameters
 
@@ -542,10 +497,10 @@ def channels_load(
     params['date_time'] = transformations.current_datetime()
 
     # Add missing geo-referencing params
-    params['crs'] = params_prim['crs']
-    params['affine'] = params_sec['affine']
-    params['px_width'] = params_sec['px_width']
-    params['shape'] = params_sec['shape']
+    params['crs'] = params_reprojected['crs']
+    params['affine'] = params_downscaled['affine']
+    params['px_width'] = params_downscaled['px_width']
+    params['shape'] = params_downscaled['shape']
     
     # Sort parameters according to key
     params = dict([(key, params[key]) for key in sorted(params.keys())])

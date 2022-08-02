@@ -28,6 +28,51 @@ def current_datetime() -> str:
 
 
 #%%
+def channels_extend(
+    channels: Dict,
+    extend_by: List = ['ndvi', 'ndvire', 'ndre', 'hls'],
+    ) -> None:
+    """
+    
+    Notes:
+    ------
+    Normalization:
+    * ndvi: `(nir - red) / (nir + red)` in `[-1, 1]`
+    * ndvire: `(re - red) / (re + red)` in `[-1, 1]`
+    * ndre: `(nir - re) / (nir + re)` in `[-1, 1]`
+    * h: Hue of hls color space in `[0, 360]`
+    * l: Lightness of hls color space in `[0, 1]`
+    * s: Saturation of hls color space in `[0, 1]`
+    """
+
+     # Vegetation indices
+    with np.errstate(divide='ignore', invalid='ignore'):  # Avoid division by zero warnings, in this case NaNs will be assigned
+
+        if 'ndvi' in extend_by:
+            channels['ndvi'] = (channels['nir'] - channels['red']) / (channels['nir'] + channels['red'])
+        
+        if 'ndvire' in extend_by:
+            channels['ndvire'] = (channels['re'] - channels['red']) / (channels['re'] + channels['red'])
+        
+        if 'ndre' in extend_by:
+            channels['ndre'] = (channels['nir'] - channels['re']) / (channels['nir'] + channels['re'])
+
+    # HLS
+    if 'hls' in extend_by:
+        
+        rgb = np.empty((channels['blue'].shape[0], channels['blue'].shape[1], 3), dtype=np.float32)
+        rgb[:,:,0] = channels['red']
+        rgb[:,:,1] = channels['green']
+        rgb[:,:,2] = channels['blue']
+
+        hls = cv2.cvtColor(rgb, cv2.COLOR_RGB2HLS)
+        channels['hue'] = hls[:,:,0]
+        channels['light'] = hls[:,:,1]
+        channels['sat'] = hls[:,:,2]
+
+    pass
+
+#%%
 def rgb_to_RGBA(red:np.ndarray, green: np.ndarray, blue: np.ndarray, perc: float = 1) -> Tuple[np.ndarray, np.ndarray]:
     """Convert red, green and blue float32 images of shape (M,N) to RGB uint8 image of shape (M,N,3) and RGBA uint32 image of shape (M,N).
 
