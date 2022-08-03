@@ -68,7 +68,6 @@ def prop_to_intensitycoords(prop, channels, brightness_channel):
         img = channels[key]
         channels_vals[i,:] = img[idxs]
 
-
     ####################### Define brightest indices and values of the segment
 
     # Which channel index corresponds to brightness channel, in channels_vals coordinates, eg. which row?
@@ -100,16 +99,16 @@ def prop_to_intensitycoords(prop, channels, brightness_channel):
     data = []
     names = []
 
-    # This us used to catch all the numpy warnings caused by numpy.nanmean() and alike 
+    # This is used to catch all the numpy warnings caused by numpy.nanmean() and alike 
     # when all values in one crown are NaNs. Can be ignored, because NaNs are assigned that can be filtered out later.
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", category=RuntimeWarning)
 
         ############# All pixels in segment
         
-        # Add total number of pixels
+        # Add total number of pixels not including nan pixels
         names.extend(['n_px'])
-        data.append(len(idxs[0]))
+        data.append( len(idxs[0]) - np.sum( np.isnan( channels_vals[0, :]) ) )
 
         # Add minimum value of each channel
         names.extend(['min_' + name for name in channel_names])
@@ -169,9 +168,9 @@ def prop_to_intensitycoords(prop, channels, brightness_channel):
 
         ############# Brightest pixels in segment
         
-        # Add number of brightest pixels
+        # Add number of brightest pixels not including nan pixels
         names.extend(['n_px_brightest'])
-        data.append(len(idxs_brightest[0]))
+        data.append( len(idxs_brightest[0]) - np.sum( np.isnan( channels_vals_brightest[0, :]) ) )
         
         # Add minimum value of each channel of brightest pixels
         names.extend(['min_brightest_' + name for name in channel_names])
@@ -345,6 +344,8 @@ def crowns_add_features(
     params_standard = {
         'include_ids': None,
         'brightness_channel' : 'light',
+        'exclude_chm_lower': 5,
+        'exclude_chm_upper': 40,
     }
     # Assign standard parameters if not given
     for k in params_standard:
@@ -357,9 +358,15 @@ def crowns_add_features(
     labelimg = transformations.polygons_to_labelimage(crowns['polygons'], params_crowns['shape'])
 
     # Check if vegetation indices and hls images are in channels if not extend
-    names_needed = ['ndvi', 'ndvire' ,'ndre' , 'hue', 'light', 'sat']
+    names_needed = ['ndvi', 'ndvire' ,'ndre', 'grvi', 'hue', 'light', 'sat']
     if not np.all([name in channels.keys() for name in names_needed]):
         transformations.channels_extend(channels)
+
+    # Assing NaNs to all channels at pxs of low and high altitudes
+    channels_cleanup = channels.copy()
+    for img in channels_cleanup.values():
+        img[channels['chm'] < params['exclude_chm_lower']] = np.nan
+        img[channels['chm'] > params['exclude_chm_upper']] = np.nan
 
     # Extract photometric features
     features = labelimage_extract_features(
@@ -376,5 +383,7 @@ def crowns_add_features(
     # Assign parameters
     params_crowns['date_time_photometric'] = transformations.current_datetime()
     params_crowns['features_photometric_brightness_channel'] = params['brightness_channel']
+    params_crowns['features_photometric_exclude_chm_lower'] = params['exclude_chm_lower']
+    params_crowns['features_photometric_exclude_chm_upper'] = params['exclude_chm_upper']
 
     pass

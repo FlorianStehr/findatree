@@ -30,22 +30,21 @@ def current_datetime() -> str:
 #%%
 def channels_extend(
     channels: Dict,
-    extend_by: List = ['ndvi', 'ndvire', 'ndre', 'hls'],
+    extend_by: List = ['ndvi', 'ndvire', 'ndre', 'grvi', 'hls'],
     ) -> None:
     """
-    
     Notes:
     ------
-    Normalization:
     * ndvi: `(nir - red) / (nir + red)` in `[-1, 1]`
     * ndvire: `(re - red) / (re + red)` in `[-1, 1]`
     * ndre: `(nir - re) / (nir + re)` in `[-1, 1]`
+    * grvi: `(green - red) / (green + red)` in `[-1, 1]`
     * h: Hue of hls color space in `[0, 360]`
     * l: Lightness of hls color space in `[0, 1]`
     * s: Saturation of hls color space in `[0, 1]`
     """
 
-     # Vegetation indices
+    # Vegetation indices
     with np.errstate(divide='ignore', invalid='ignore'):  # Avoid division by zero warnings, in this case NaNs will be assigned
 
         if 'ndvi' in extend_by:
@@ -57,7 +56,10 @@ def channels_extend(
         if 'ndre' in extend_by:
             channels['ndre'] = (channels['nir'] - channels['re']) / (channels['nir'] + channels['re'])
 
-    # HLS
+        if 'grvi' in extend_by:
+            channels['grvi'] = (channels['green'] - channels['red']) / (channels['green'] + channels['red'])
+    
+    # HLS color space
     if 'hls' in extend_by:
         
         rgb = np.empty((channels['blue'].shape[0], channels['blue'].shape[1], 3), dtype=np.float32)

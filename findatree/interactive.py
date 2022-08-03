@@ -34,7 +34,10 @@ class Plotter:
         
         # Plot content
         self.channels_downscale = 0
-        self.show_features = ['id', 'ba', 'sst', 'nbv', 'perc25_brightest_ndvi', 'median_brightest_ndvi', 'perc75_brightest_ndvi']
+        self.show_features = [
+            'id', 'ba', 'sst', 'nbv',
+            'perc25_brightest_ndvi', 'median_brightest_ndvi', 'perc75_brightest_ndvi',
+            ]
 
         # Style attributes
         self.width = 400
@@ -64,6 +67,11 @@ class Plotter:
 
         # Downscale channels using gaussian image pyramids
         channels_down, params_channels_down = geo_to_image._channels_downscale(channels, params_channels, downscale = self.channels_downscale)
+
+        # Check if vegetation indices and hls images are in channels if not extend
+        names_needed = ['ndvi', 'ndvire' ,'ndre', 'grvi', 'hue', 'light', 'sat']
+        if not np.all([name in channels_down.keys() for name in names_needed]):
+            transformations.channels_extend(channels_down)
 
         # Get source data
         data = self.source.data

@@ -1,6 +1,7 @@
 from typing import Dict, List, Tuple
 import importlib
 import os
+import yaml
 import re
 import h5py
 import numpy as np
@@ -11,6 +12,16 @@ from tqdm import tnrange
 import findatree.transformations as transformations
 importlib.reload(transformations)
 
+
+#%%
+def list_of_dicts_to_yaml(path: str, list_of_dicts: List[Dict]):
+    with open(path, "w") as f:
+        yaml.dump_all(list_of_dicts, f, default_flow_style=False)
+    
+    pass
+
+
+#%%
 def find_all_tnrs_in_dir(
     dir_name,
     tnr_pattern_lead: str = 'tnr_',
@@ -135,7 +146,7 @@ def _find_paths_in_dirs(
     try:
         paths_dict['path_shapes'] = paths_shape[0]
     except:
-        print(f"Warning: (tnr{tnr_number}) No file or more than one file with pattern `{shape_pattern}.shp` found in given directories")
+        pass
 
     return paths_dict
 

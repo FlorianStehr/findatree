@@ -244,8 +244,9 @@ def watershed(
 
     ######################################### (0) Set standard settings if not set
     params_standard = {
-        'thresh_global_chm': 5,
-        'thresh_global_ndvi': 0.4,
+        'thresh_global_chm_lower': 5,
+        'thresh_global_chm_upper': 40,
+        'thresh_global_ndvi': 0.3,
         'thresh_channel': 'light',
         'thresh_downscale': 1,
         'thresh_blur': False,
@@ -264,17 +265,26 @@ def watershed(
             params[k] = params_standard[k]
 
     ######################################### (1) Prepare channels at defined px_widths for thresholding and watershed
+    # Check if vegetation indices and hls images are in channels if not extend
+    names_needed = ['ndvi', 'ndvire' ,'ndre', 'grvi', 'hue', 'light', 'sat']
+    if not np.all([name in cs.keys() for name in names_needed]):
+        transformations.channels_extend(cs)
+
+    # (Downscaled) Thresholding channels
     cs_thresh, params_thresh = geo_to_image._channels_downscale(cs, params_cs, downscale=params['thresh_downscale'])
     params['thresh_shape'] = params_thresh['shape']
     params['thresh_px_width'] = params_thresh['px_width']
 
+    # Downscaled) Watershed channels
     cs_water, params_water = geo_to_image._channels_downscale(cs, params_cs, downscale=params['water_downscale'])
     params['water_shape'] = params_water['shape']
     params['water_px_width'] = params_water['px_width']
 
 
     ######################################### (2) Set global mask
-    mask_global_thresh = (cs_thresh['chm'] > params['thresh_global_chm']) & (cs_thresh['ndvi'] > params['thresh_global_ndvi'])
+    mask_global_thresh = (cs_thresh['chm'] > params['thresh_global_chm_lower'])
+    mask_global_thresh = mask_global_thresh  & (cs_thresh['chm'] < params['thresh_global_chm_upper'])
+    mask_global_thresh = mask_global_thresh  & (cs_thresh['ndvi'] > params['thresh_global_ndvi'])
 
 
     ######################################### (3) Local gaussian thresholding
