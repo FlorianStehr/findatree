@@ -363,15 +363,17 @@ def crowns_add_features(
         transformations.channels_extend(channels)
 
     # Assing NaNs to all channels at pxs of low and high altitudes
-    channels_cleanup = channels.copy()
-    for img in channels_cleanup.values():
+    channels_cleanup = {}
+    for key in channels:
+        img = channels[key].copy()
         img[channels['chm'] < params['exclude_chm_lower']] = np.nan
         img[channels['chm'] > params['exclude_chm_upper']] = np.nan
+        channels_cleanup[key] = img
 
     # Extract photometric features
     features = labelimage_extract_features(
         labelimg,
-        channels,
+        channels_cleanup,
         params_channels,
         include_ids = params['include_ids'],
         brightness_channel  = params['brightness_channel'],

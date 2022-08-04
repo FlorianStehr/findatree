@@ -152,11 +152,83 @@ def _find_paths_in_dirs(
 
 
 #%%
+def _hdf5_yield_dset_names(file, object):
+    
+    if isinstance(object, h5py.Group):
+        for sub_object in object.values():
+            if isinstance(sub_object, h5py.Dataset):
+                yield sub_object.name
+            else:
+                yield from _hdf5_yield_dset_names(file, sub_object)
+
+#%%
+def _hdf5_yield_subgroup_names(file, object):
+    
+    if isinstance(object, h5py.Group):
+        for sub_object in object.values():
+            if isinstance(sub_object, h5py.Group):
+                yield sub_object.name    
+            else:
+                yield from _hdf5_yield_subgroup_names(file, sub_object)
+
+
+#%%
+def hdf5_names_tolist(path, group_name):
+
+    with h5py.File(path, 'a') as f:
+        
+        if group_name in f.keys():
+
+            # Get the full paths to all dsets in all subgroups
+            dset_names_generator = _hdf5_yield_dset_names(f, f[group_name])
+            dset_names = [name for name in dset_names_generator]
+
+            # Get the full paths to all subgroups in all subgroups
+            subgroup_names_generator = _hdf5_yield_subgroup_names(f, f[group_name])
+            subgroup_names = [f"/{group_name}"] # Add group itself to subgroup_names
+            subgroup_names.extend([name for name in subgroup_names_generator])
+
+            # Reduce to unique subgroups
+            subgroup_names = list(np.unique(subgroup_names))
+            
+            # Get the depth of each subgroup
+            subgroup_depth = [name.count('/') for name in subgroup_names]
+
+            # Sort subgroups according to depth (high to low)
+            subgroup_depth_sortidx = list(np.argsort(subgroup_depth))
+            subgroup_depth_sortidx.reverse()
+            subgroup_names = [subgroup_names[idx] for idx in subgroup_depth_sortidx]
+
+        else:
+            dset_names = []
+            subgroup_names = []
+
+    return dset_names, subgroup_names
+
+#%%
+def hdf5_delete_group(path, group_name):
+
+    with h5py.File(path, 'a') as f:
+        
+        dset_names, subgroup_names = hdf5_names_tolist(path, group_name)
+
+        # Now first delete all dsets
+        # if len(dset_names) > 0:
+        for dset_name in dset_names:
+            del f[dset_name]
+
+        # ... then delete all subgroups.
+        # if len(subgroup_names) > 0:
+        for subgroup_name in subgroup_names: 
+            del f[subgroup_name]
+
+    pass
+
+#%%
 def channels_to_hdf5(channels: Dict , params_channels: Dict, dir_name: str=r'C:\Data\lwf\processed') -> None:
     """Save all secondary channels in .hdf5 container.
 
     Group `channels` wil be created in .hdf5 with `channels` as datasets and `params_channels` as group attributes.
-    If .hdf5 already exists and dsm, dtm and ortho paths did not change the file is overwritten, otherwise an error is raised.
 
     Parameters
     ----------
@@ -176,45 +248,92 @@ def channels_to_hdf5(channels: Dict , params_channels: Dict, dir_name: str=r'C:\
 
     # Define name of .hdf5
     name = f"tnr{params_channels['tnr']}.hdf5"
-    
     # Define full path to .hdf5, i.e. directory + name
     path = os.path.join(dir_name, name)
+    # Define group name
+    group_name = 'channels'
 
-    # Open file for writing if exists, create otherwise.
+    # Completely delete group and all of it's subgroups, dsets and respective attributes
+    hdf5_delete_group(path, group_name)
+
+    # Now write group
     with h5py.File(path, 'a') as f:
 
-        ########################################### Group
-        # Get pointer to 'channels' group if exists
-        if 'channels' in f:
-            grp = f.get('channels')
-            
-            # Assert that any of the dsm, dtm and ortho paths saved in group attributes are the same as in params_channels
-            for key in ['path_dsm', 'path_dtm', 'path_ortho']:
-                assert grp.attrs[key] == params_channels[key], f"You are trying to overwrite channels with a different `{key}` attribute. No file was written. Change the saving directory."
-        
-        else:
-            grp = f.create_group('channels')
-        
-        ########################################### Group attributes
-        # Delete all old group attributes and ...
-        for key in grp.attrs.keys():
-            del grp.attrs[key]
+        # Create main group
+        grp = f.create_group(group_name)
 
-        # ... assign (new) parameters as group attributes
+        # Assign parameters as main group attributes
         for key in params_channels:
             grp.attrs[key] = params_channels[key]
 
-        ########################################### Group datasets
-        # Delete all old group datasets and ...
-        for key in grp.keys():
-            del grp[key]
-
-        # ... assign each channel as group dataset
+        # Assign all channels as main group dsets
         for key in channels_save:
             grp.create_dataset(key, data=channels_save[key])
 
         pass
 
+
+#%%
+def crowns_to_hdf5(crowns: Dict , params_crowns: Dict, dir_name: str=r'C:\Data\lwf\processed') -> None:
+    
+    # Define name of .hdf5
+    name = f"tnr{params_crowns['tnr']}.hdf5"
+    # Define full path to .hdf5, i.e. directory + name
+    path = os.path.join(dir_name, name)
+    # Define group name
+    try:
+        group_name = 'crowns_' + params_crowns['origin'] 
+    except:
+        print("Please provide `'origin'` in params_crowns")
+
+    # Completely delete group and all of it's subgroups, dsets and respective attributes
+    hdf5_delete_group(path, group_name)
+
+    # Open file for writing if exists, create otherwise.
+    with h5py.File(path, 'a') as f:
+
+        ######################################### Group
+        # Create main group
+        grp_main = f.create_group(group_name)
+
+        # Assign parameters as main group attributes
+        for key in params_crowns:
+            grp_main.attrs[key] = params_crowns[key]
+        
+        ########################################### Polygons subgroup
+        # Create 'polygons' subgroup
+        grp = f.create_group(group_name + '/polygons')
+
+        # Assign polygons as datasets in 'polygons' subgroup
+        for idx, poly in crowns['polygons'].items():  
+            key = str(idx).zfill(5) # Convert idx to key to string with zero padding
+            grp.create_dataset(key, data = poly)
+
+        ########################################### Features subgroup
+        # Create 'features' subgroup
+        grp = f.create_group(group_name + '/features')
+
+        # Assign all features (i.e. feature sets like 'terrestrial or 'photometric') in crowns['features'] as datasets in 'features' subgroup.
+        for key, features in crowns['features'].items():
+
+            # Assert that number of crowns in features are the same as number of crowns in params_crowns
+            message = f"`len(crowns['features'][{key}]` is {features.shape[0]} but `params_crowns['number_crowns']` is {params_crowns['number_crowns']})"
+            assert features.shape[0] == params_crowns['number_crowns'], message
+
+            # Write features as dataset
+            grp.create_dataset(key, data = features)
+            
+            # Define attributes dict for features dataset
+            features_attrs = {}
+            features_attrs['names'] = [name for name in features.dtype.names]
+            features_attrs['dtypes'] = [str(features.dtype[i]) for i in range(len(features.dtype))]
+
+            # Write feature parameters into main group attributes
+            for key_attr, val_attr in features_attrs.items():
+                grp_main.attrs['features_' + key + '_' + key_attr] = val_attr
+
+                
+    pass
 
 #%%
 def load_shapefile(dir_names: List, params_channels: Dict, verbose: bool = True) -> Tuple[Dict, Dict]:
@@ -333,80 +452,6 @@ def load_shapefile(dir_names: List, params_channels: Dict, verbose: bool = True)
     return crowns, params
 
 
-#%%
-def crowns_to_hdf5(crowns: Dict , params_crowns: Dict, dir_name: str=r'C:\Data\lwf\processed') -> None:
-    
-    # Define name of .hdf5
-    name = f"tnr{params_crowns['tnr']}.hdf5"
-    
-    # Define full path to .hdf5, i.e. directory + name
-    path = os.path.join(dir_name, name)
-
-    # Define group name
-    try:
-        group_name = 'crowns_' + params_crowns['origin'] 
-    except:
-        print("Please provide `'origin'` in params_crowns")
-
-
-    # Open file for writing if exists, create otherwise.
-    with h5py.File(path, 'a') as f:
-
-        ######################################### Group
-        # Get crowns group, delete all of its subgroups
-        try:
-            # Get main group
-            grp_main = f[group_name]
-            # Delete all the main groups' subgroups
-            for key in grp_main: del grp_main[key]
-            # Now delete main group
-            del f[group_name]
-
-        except:
-            pass
-
-        grp_main = f.create_group(group_name)
-
-        ######################################### Group attributes
-        for key in params_crowns:
-            grp_main.attrs[key] = params_crowns[key]
-        
-        ########################################### Polygons subgroup
-        # Create 'polygons' subgroup (main group already deleted!)
-        grp = f.create_group(group_name + '/polygons')
-
-
-        # Assign polygons as datasets in 'polygons' subgroup
-        for idx, poly in crowns['polygons'].items():  
-
-            key = str(idx).zfill(5) # Convert idx to key to string with zero padding
-            grp.create_dataset(key, data = poly)
-
-        ########################################### Features subgroup
-        # Create 'features' subgroup (main group already deleted!)
-        grp = f.create_group(group_name + '/features')
-
-        # Assign all features (i.e. feature sets like 'terrestrial or 'photometric') in crowns['features'] as datasets in 'features' subgroup.
-        for key, features in crowns['features'].items():
-
-            # Assert that number of crowns in features are the same as number of crowns in params_crowns
-            message = f"`len(crowns['features'][{key}]` is {features.shape[0]} but `params_crowns['number_crowns']` is {params_crowns['number_crowns']})"
-            assert features.shape[0] == params_crowns['number_crowns'], message
-
-            # Write features as dataset
-            grp.create_dataset(key, data = features)
-            
-            # Define attributes dict for features dataset
-            features_attrs = {}
-            features_attrs['names'] = [name for name in features.dtype.names]
-            features_attrs['dtypes'] = [str(features.dtype[i]) for i in range(len(features.dtype))]
-
-            # Write feature parameters into main group attributes
-            for key_attr, val_attr in features_attrs.items():
-                grp_main.attrs['features_' + key + '_' + key_attr] = val_attr
-
-                
-        pass
 
 
 #%% 
@@ -516,13 +561,13 @@ def allhdf5s_crowns_features_to_dataframe(
         except:
             pass
 
-        # Try to add photometric & terrestrial features to respective list
+        # Try to add photometric & terrestrial features to respective dict
         try:
-            features_terr[tnr] = pd.DataFrame( data[crowns_type]['features']['photometric'] ).assign(tnr = tnr)
+            features_photo[tnr] = pd.DataFrame( data[crowns_type]['features']['photometric'] ).assign(tnr = tnr)
         except:
             pass
         try:
-            features_photo[tnr] = pd.DataFrame( data[crowns_type]['features']['terrestrial'] ).assign(tnr = tnr)
+            features_terr[tnr] = pd.DataFrame( data[crowns_type]['features']['terrestrial'] ).assign(tnr = tnr)
         except:
             pass
     
