@@ -30,7 +30,7 @@ def current_datetime() -> str:
 #%%
 def channels_extend(
     channels: Dict,
-    extend_by: List = ['ndvi', 'ndvire', 'ndre', 'grvi', 'hls'],
+    extend_by: List = ['ndvi', 'ndvire', 'ndre', 'grvi', 'osavi', 'hls'],
     ) -> None:
     """
     Notes:
@@ -39,6 +39,7 @@ def channels_extend(
     * ndvire: `(re - red) / (re + red)` in `[-1, 1]`
     * ndre: `(nir - re) / (nir + re)` in `[-1, 1]`
     * grvi: `(green - red) / (green + red)` in `[-1, 1]`
+    * osavi: `(nir - red * (1 + alpha)) / (nir + red + alpha)` with `alpha = 0.16` in `[-1, 1]`
     * h: Hue of hls color space in `[0, 360]`
     * l: Lightness of hls color space in `[0, 1]`
     * s: Saturation of hls color space in `[0, 1]`
@@ -58,6 +59,10 @@ def channels_extend(
 
         if 'grvi' in extend_by:
             channels['grvi'] = (channels['green'] - channels['red']) / (channels['green'] + channels['red'])
+
+        if 'osavi' in extend_by:
+            alpha = 0.16
+            channels['osavi'] = ( (channels['nir'] - channels['red']) * (1 + alpha)) / (channels['nir'] + channels['red'] + alpha)
     
     # HLS color space
     if 'hls' in extend_by:

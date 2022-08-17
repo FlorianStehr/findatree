@@ -336,7 +336,7 @@ def crowns_to_hdf5(crowns: Dict , params_crowns: Dict, dir_name: str=r'C:\Data\l
     pass
 
 #%%
-def load_shapefile(dir_names: List, params_channels: Dict, verbose: bool = True) -> Tuple[Dict, Dict]:
+def load_shapefile(dir_names: List, params_channels: Dict, remove_outliers=True, verbose: bool = True) -> Tuple[Dict, Dict]:
 
     # Search for paths to wanted files in given directories
     paths = _find_paths_in_dirs(dir_names, params_channels['tnr'])
@@ -397,7 +397,7 @@ def load_shapefile(dir_names: List, params_channels: Dict, verbose: bool = True)
     outlier_idxs = []
     outlier_keys = []
 
-    # Find oultiers
+    # Find outliers
     for idx, (key, poly) in enumerate(crowns_polys.items()):
 
         # Define bool if poly is completely in image
@@ -413,9 +413,10 @@ def load_shapefile(dir_names: List, params_channels: Dict, verbose: bool = True)
             outlier_keys.append(key)
 
     # Remove outliers
-    for key in outlier_keys: 
-        crowns_polys.pop(key)
-    crowns_recs = np.delete(crowns_recs, outlier_idxs, axis=0)
+    if remove_outliers:
+        for key in outlier_keys: 
+            crowns_polys.pop(key)
+        crowns_recs = np.delete(crowns_recs, outlier_idxs, axis=0)
 
     # Update the number of crowns
     n_crowns = len(crowns_polys)

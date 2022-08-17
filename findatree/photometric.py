@@ -75,9 +75,11 @@ def prop_to_intensitycoords(prop, channels, brightness_channel):
     
     # Get brightness values
     brightness_vals = channels_vals[channels_brightness_idx, :]
-    
+
     # Set the threshold for bright pixels to upper 75 percentile of brightness values
-    brightness_thresh = np.percentile(brightness_vals, 75)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", category=RuntimeWarning)
+        brightness_thresh = np.nanpercentile(brightness_vals, 75)
 
     # Get indices where brightness values are above threshold, in channels_vals coordinates.
     brightness_upper_idxs = np.where(brightness_vals > brightness_thresh)[0]
@@ -88,7 +90,7 @@ def prop_to_intensitycoords(prop, channels, brightness_channel):
     
     # These are the indices of the brightest pixels, in image coordinates.
     idxs_brightest = (idxs[0][brightness_upper_idxs], idxs[1][brightness_upper_idxs])
-    
+
     # These are the brightest values of all channels
     channels_vals_brightest = channels_vals[:, brightness_upper_idxs]
 
@@ -286,7 +288,6 @@ def labelimage_extract_features(
 
     # Loop through all labels and extract properties as np.ndarray
     for i, prop in enumerate(props_include):
-        
         if i == 0: # First call
             
             features_i, names  = prop_to_allfeatures(
@@ -314,6 +315,7 @@ def labelimage_extract_features(
 
     # Prepare dtype for conversion of features to structured numpy array
     dtypes = ['<f4' for name in names]
+
     # These fields will be stored as uint16 type
     names_uitype = ['id', 'x_mean', 'y_mean', 'x_min_bbox', 'x_max_bbox', 'y_min_bbox', 'y_max_bbox']
     names_uitype.extend(['x_max_' + name for name in channels.keys()])
