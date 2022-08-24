@@ -6,6 +6,7 @@ import cv2
 import skimage.exposure
 import skimage.segmentation
 import skimage.morphology
+import skimage.feature
 
 import rasterio
 import rasterio.features
@@ -30,7 +31,7 @@ def current_datetime() -> str:
 #%%
 def channels_extend(
     channels: Dict,
-    extend_by: List = ['ndvi', 'ndvire', 'ndre', 'grvi', 'osavi', 'hls'],
+    extend_by: List = ['ndvi', 'ndvire', 'ndre', 'grvi', 'hls','ratios'],
     ) -> None:
     """
     Notes:
@@ -39,15 +40,14 @@ def channels_extend(
     * ndvire: `(re - red) / (re + red)` in `[-1, 1]`
     * ndre: `(nir - re) / (nir + re)` in `[-1, 1]`
     * grvi: `(green - red) / (green + red)` in `[-1, 1]`
-    * osavi: `(nir - red * (1 + alpha)) / (nir + red + alpha)` with `alpha = 0.16` in `[-1, 1]`
     * h: Hue of hls color space in `[0, 360]`
     * l: Lightness of hls color space in `[0, 1]`
     * s: Saturation of hls color space in `[0, 1]`
     """
 
-    # Vegetation indices
     with np.errstate(divide='ignore', invalid='ignore'):  # Avoid division by zero warnings, in this case NaNs will be assigned
 
+        ####### Vegetation indices
         if 'ndvi' in extend_by:
             channels['ndvi'] = (channels['nir'] - channels['red']) / (channels['nir'] + channels['red'])
         
@@ -59,10 +59,27 @@ def channels_extend(
 
         if 'grvi' in extend_by:
             channels['grvi'] = (channels['green'] - channels['red']) / (channels['green'] + channels['red'])
+        
+        ####### Color ratios
+        if 'ratios' in extend_by:
+            channels['nore'] = channels['nir'] / channels['re']
+            channels['nor'] = channels['nir'] / channels['red']
+            channels['nog'] = channels['nir'] / channels['green']
+            channels['nob'] = channels['nir'] / channels['blue']
 
-        if 'osavi' in extend_by:
-            alpha = 0.16
-            channels['osavi'] = ( (channels['nir'] - channels['red']) * (1 + alpha)) / (channels['nir'] + channels['red'] + alpha)
+            channels['reor'] = channels['re'] / channels['red']
+            channels['reog'] = channels['re'] / channels['green']
+            channels['reob'] = channels['re'] / channels['blue']
+
+            channels['rog'] = channels['red'] / channels['green']
+            channels['rob'] = channels['red'] / channels['blue']
+
+            channels['gob'] = channels['green'] / channels['blue']
+        
+        ####### Gray scale texture (local binary pattern)
+        # if 'lbp' in extend_by:
+        #     img = channels['blue'] + channels['green'] + channels['red']
+        #     channels['lbp'] = skimage.feature.local_binary_pattern(img, 16, 2, method='uniform')
     
     # HLS color space
     if 'hls' in extend_by:

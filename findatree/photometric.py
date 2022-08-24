@@ -48,58 +48,74 @@ def prop_to_ratios(prop):
 
 
 #%%
-def prop_to_intensitycoords(prop, channels, brightness_channel):
+def prop_to_intensitycoords(prop, channels, bright_channel):
     
     ####################### Define image-indices and channel values of the segment
 
-    # Channel names
-    channel_names = [key for key in channels] 
+    # Channel names that are used for computation of:
+    #    * intensity weighted metrics
+    #    * xy_max, i.e. location of pixel with maximum intensity
+    names_intensity = [
+        'chm',                              # canopy height model
+        'light',                            # lightness
+        'ndvi', 'ndvire', 'ndre', 'grvi',   # veg. indices
+        'nore', 'nor', 'nog', 'nob',        # nir ratios
+        'reor', 'reog', 'reob',             # re ratios
+        'rog', 'rob',                       # red ratios
+        'gob',                              # green ratios
+        ]
+
+    names_xy_max = ['chm', 'light']
+    
+    # These are all the channels for preparation of the flat channel array
+    names = names_xy_max.copy()
+    names.extend([name for name in names_intensity if name not in names_xy_max])
 
     # Indices of the label, in image coordinates
     idxs = prop['coords']
     idxs = (idxs[:,0], idxs[:,1])
 
-    # Prepare flat array of values of each channel. Row corresponds to channel.
-    channels_vals = np.zeros(
-        (len(channel_names), len(idxs[0])),
+    # Prepare flat array of values of all channels specified by names. Row corresponds to channel.
+    channels_flat = np.zeros(
+        (len(names), len(idxs[0])),
         dtype=np.float32,
         )
-    for i, key in enumerate(channels):
-        img = channels[key]
-        channels_vals[i,:] = img[idxs]
+    for i, name in enumerate(names):
+        img = channels[name]
+        channels_flat[i,:] = img[idxs]
 
     ####################### Define brightest indices and values of the segment
 
-    # Which channel index corresponds to brightness channel, in channels_vals coordinates, eg. which row?
-    channels_brightness_idx = channel_names.index(brightness_channel)
+    # Which row in channels_flat corresponds to brightness channel?
+    row_bright = names.index(bright_channel)
     
     # Get brightness values
-    brightness_vals = channels_vals[channels_brightness_idx, :]
+    bright_vals = channels_flat[row_bright, :]
 
     # Set the threshold for bright pixels to upper 75 percentile of brightness values
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", category=RuntimeWarning)
-        brightness_thresh = np.nanpercentile(brightness_vals, 75)
+        bright_thresh = np.nanpercentile(bright_vals, 75)
 
-    # Get indices where brightness values are above threshold, in channels_vals coordinates.
-    brightness_upper_idxs = np.where(brightness_vals > brightness_thresh)[0]
+    # Get columns where brightness values are above threshold, in channels_flat coordinates.
+    cols_bright = np.where(bright_vals > bright_thresh)[0]
     
     # Treat case of zero brightest pixels -> Assign index of maximum value
-    if len(brightness_upper_idxs) == 0:
-        brightness_upper_idxs = [np.argmax(brightness_vals)]
+    if len(cols_bright) == 0:
+        cols_bright = [np.argmax(bright_vals)]
     
     # These are the indices of the brightest pixels, in image coordinates.
-    idxs_brightest = (idxs[0][brightness_upper_idxs], idxs[1][brightness_upper_idxs])
+    idxs_bright = (idxs[0][cols_bright], idxs[1][cols_bright])
 
-    # These are the brightest values of all channels
-    channels_vals_brightest = channels_vals[:, brightness_upper_idxs]
+    # These are the brightest values of all channels_flat
+    channels_flat_bright = channels_flat[:, cols_bright]
 
 
     ####################### Feature extraction
 
     # Init data and names
-    data = []
-    names = []
+    features = []
+    names_features = []
 
     # This is used to catch all the numpy warnings caused by numpy.nanmean() and alike 
     # when all values in one crown are NaNs. Can be ignored, because NaNs are assigned that can be filtered out later.
@@ -107,130 +123,136 @@ def prop_to_intensitycoords(prop, channels, brightness_channel):
         warnings.simplefilter("ignore", category=RuntimeWarning)
 
         ############# All pixels in segment
-        
-        # Add total number of pixels not including nan pixels
-        names.extend(['n_px'])
-        data.append( len(idxs[0]) - np.sum( np.isnan( channels_vals[0, :]) ) )
 
         # Add minimum value of each channel
-        names.extend(['min_' + name for name in channel_names])
-        data.extend( list( np.nanmin(channels_vals, axis=1) ) )
+        names_features.extend(['min_' + name for name in names_intensity])
+        features.extend( list( np.nanmin(channels_flat, axis=1) ) )
 
         # Add maximum value of each channel
-        names.extend(['max_' + name for name in channel_names])
-        data.extend( list( np.nanmax(channels_vals, axis=1) ) )
+        names_features.extend(['max_' + name for name in names_intensity])
+        features.extend( list( np.nanmax(channels_flat, axis=1) ) )
 
         # Add mean value of each channel
-        names.extend(['mean_' + name for name in channel_names])
-        data.extend( list( np.nanmean(channels_vals, axis=1) ) )
+        names_features.extend(['mean_' + name for name in names_intensity])
+        features.extend( list( np.nanmean(channels_flat, axis=1) ) )
 
         # Add std value of each channel
-        names.extend(['std_' + name for name in channel_names])
-        data.extend( list( np.nanstd(channels_vals, axis=1) ) )
+        names_features.extend(['std_' + name for name in names_intensity])
+        features.extend( list( np.nanstd(channels_flat, axis=1) ) )
 
         # Add median value of each channel
-        names.extend(['median_' + name for name in channel_names])
-        data.extend( list( np.nanmedian(channels_vals, axis=1) ) )
+        names_features.extend(['median_' + name for name in names_intensity])
+        features.extend( list( np.nanmedian(channels_flat, axis=1) ) )
 
         # Add 75 percentile value of each channel
-        names.extend(['perc75_' + name for name in channel_names])
-        data.extend( list( np.nanpercentile(channels_vals, 75, axis=1) ) )
+        names_features.extend(['perc75_' + name for name in names_intensity])
+        features.extend( list( np.nanpercentile(channels_flat, 75, axis=1) ) )
 
         # Add 25 percentile value of each channel
-        names.extend(['perc25_' + name for name in channel_names])
-        data.extend( list( np.nanpercentile(channels_vals, 25, axis=1) ) )
+        names_features.extend(['perc25_' + name for name in names_intensity])
+        features.extend( list( np.nanpercentile(channels_flat, 25, axis=1) ) )
 
-        # Add (unweighted) center coordinate x in pixels (max)
-        names.extend(['x_max_' + name for name in channel_names])
-        data.extend( list( idxs[1][ np.argmax(channels_vals, axis=1) ] ) )
+        # Add coordinate x of pixel with maximum value
+        names_features.extend(['x_max_' + name for name in names_xy_max])
+        features.extend( list( idxs[1][ np.argmax(channels_flat[:len(names_xy_max), :], axis=1) ] ) )
+
+        # Add coordinate y of pixel with maximum value
+        names_features.extend(['y_max_' + name for name in names_xy_max])
+        features.extend( list( idxs[0][ np.argmax(channels_flat[:len(names_xy_max), :], axis=1) ] ) )
+
+        ###### Non-intensity weighted metrics
+
+        # Add total number of pixels not including nan pixels
+        names_features.extend(['n_px'])
+        features.append( len(idxs[0]) - np.sum( np.isnan( channels_flat[0, :]) ) )
 
         # Add (unweighted) center coordinate x in pixels (mean)
-        names.extend(['x_mean'])
-        data.extend( [ np.mean(idxs[1] ) ] )
+        names_features.extend(['x_mean'])
+        features.extend( [ np.mean(idxs[1] ) ] )
 
         # Add (unweighted) center coordinate y in pixels (mean)
-        names.extend(['y_mean'])
-        data.extend( [ np.mean(idxs[0] ) ] )
+        names_features.extend(['y_mean'])
+        features.extend( [ np.mean(idxs[0] ) ] )
 
         # Add bounding box minimum in x in pixels
-        names.extend(['x_min_bbox'])
-        data.extend( [ np.min(idxs[1] ) ] )
+        names_features.extend(['x_min_bbox'])
+        features.extend( [ np.min(idxs[1] ) ] )
 
         # Add bounding box maximum in x in pixels
-        names.extend(['x_max_bbox'])
-        data.extend( [ np.max(idxs[1] ) ] )
+        names_features.extend(['x_max_bbox'])
+        features.extend( [ np.max(idxs[1] ) ] )
 
         # Add bounding box minimum in y in pixels
-        names.extend(['y_min_bbox'])
-        data.extend( [ np.min(idxs[0] ) ] )
+        names_features.extend(['y_min_bbox'])
+        features.extend( [ np.min(idxs[0] ) ] )
 
         # Add bounding box maximum in y in pixels
-        names.extend(['y_max_bbox'])
-        data.extend( [ np.max(idxs[0] ) ] )
+        names_features.extend(['y_max_bbox'])
+        features.extend( [ np.max(idxs[0] ) ] )
+
+
 
         ############# Brightest pixels in segment
-        
-        # Add number of brightest pixels not including nan pixels
-        names.extend(['n_px_brightest'])
-        data.append( len(idxs_brightest[0]) - np.sum( np.isnan( channels_vals_brightest[0, :]) ) )
-        
+
         # Add minimum value of each channel of brightest pixels
-        names.extend(['min_brightest_' + name for name in channel_names])
-        data.extend( list( np.nanmin(channels_vals_brightest, axis=1) ) )
+        names_features.extend(['min_bright_' + name for name in names_intensity])
+        features.extend( list( np.nanmin(channels_flat_bright, axis=1) ) )
+
+        # Add maximum value of each channel of brightest pixels
+        names_features.extend(['max_bright_' + name for name in names_intensity])
+        features.extend( list( np.nanmin(channels_flat_bright, axis=1) ) )
 
         # Add mean value of brightest pixels of each channel 
-        names.extend(['mean_brightest_' + name for name in channel_names])
-        data.extend( list( np.nanmean(channels_vals_brightest, axis=1) ) )
+        names_features.extend(['mean_bright_' + name for name in names_intensity])
+        features.extend( list( np.nanmean(channels_flat_bright, axis=1) ) )
 
         # Add std value of brightest pixels of each channel
-        names.extend(['std_brightest_' + name for name in channel_names])
-        data.extend( list( np.nanstd(channels_vals_brightest, axis=1) ) )
+        names_features.extend(['std_bright_' + name for name in names_intensity])
+        features.extend( list( np.nanstd(channels_flat_bright, axis=1) ) )
 
         # Add median value of brightest pixels of each channel
-        names.extend(['median_brightest_' + name for name in channel_names])
-        data.extend( list( np.nanmedian(channels_vals_brightest, axis=1) ) )
+        names_features.extend(['median_bright_' + name for name in names_intensity])
+        features.extend( list( np.nanmedian(channels_flat_bright, axis=1) ) )
 
         # Add 75 percentile value of brightest pixels of each channel
-        names.extend(['perc75_brightest_' + name for name in channel_names])
-        data.extend( list( np.nanpercentile(channels_vals_brightest, 75, axis=1) ) )
+        names_features.extend(['perc75_bright_' + name for name in names_intensity])
+        features.extend( list( np.nanpercentile(channels_flat_bright, 75, axis=1) ) )
 
         # Add 25 percentile value of brightest pixels of each channel
-        names.extend(['perc25_brightest_' + name for name in channel_names])
-        data.extend( list( np.nanpercentile(channels_vals_brightest, 25, axis=1) ) )
+        names_features.extend(['perc25_bright_' + name for name in names_intensity])
+        features.extend( list( np.nanpercentile(channels_flat_bright, 25, axis=1) ) )
 
-        # Add (unweighted) center coordinate x of brightest pixels in pixels (mean)
-        names.extend(['x_mean_brightest'])
-        data.extend( [ np.mean(idxs_brightest[1] ) ] )
+        ###### Non-intensity weighted metrics
 
-        # Add (unweighted) center coordinate y of brightest pixels in pixels (mean)
-        names.extend(['y_mean_brightest'])
-        data.extend( [ np.mean(idxs_brightest[0] ) ] )
+        # Add number of brightest pixels not including nan pixels
+        names_features.extend(['n_px_bright'])
+        features.append( len(idxs_bright[0]) - np.sum( np.isnan( channels_flat_bright[0, :]) ) )
 
         # Add bounding box minimum in x of brightest pixels in pixels
-        names.extend(['x_min_bbox_brightest'])
-        data.extend( [ np.min(idxs_brightest[1] ) ] )
+        names_features.extend(['x_min_bbox_bright'])
+        features.extend( [ np.min(idxs_bright[1] ) ] )
 
         # Add bounding box maximum in x of brightest pixels in pixels
-        names.extend(['x_max_bbox_brightest'])
-        data.extend( [ np.max(idxs_brightest[1] ) ] )
+        names_features.extend(['x_max_bbox_bright'])
+        features.extend( [ np.max(idxs_bright[1] ) ] )
 
         # Add bounding box minimum in y of brightest pixels in pixels
-        names.extend(['y_min_bbox_brightest'])
-        data.extend( [ np.min(idxs_brightest[0] ) ] )
+        names_features.extend(['y_min_bbox_bright'])
+        features.extend( [ np.min(idxs_bright[0] ) ] )
 
         # Add bounding box maximum in y of brightest pixels in pixels
-        names.extend(['y_max_bbox_brightest'])
-        data.extend( [ np.max(idxs_brightest[0] ) ] )
+        names_features.extend(['y_max_bbox_bright'])
+        features.extend( [ np.max(idxs_bright[0] ) ] )
 
     ############# Create final output array
 
-    data = np.array(data, dtype=np.float32)
+    features = np.array(features, dtype=np.float32)
 
-    return data, names
+    return features, names_features
 
 
 #%%
-def prop_to_allfeatures(prop, channels, px_width, brightness_channel):
+def prop_to_allfeatures(prop, channels, px_width, bright_channel):
     
     # Get label
     label_name = ['id']                 # We will store the crown identifier as `id` ...
@@ -251,7 +273,7 @@ def prop_to_allfeatures(prop, channels, px_width, brightness_channel):
     intcoords, intcoord_names = prop_to_intensitycoords(
         prop,
         channels, 
-        brightness_channel=brightness_channel,
+        bright_channel=bright_channel,
         )
 
     # Concatenate all props and corresponding names
@@ -274,7 +296,7 @@ def labelimage_extract_features(
     channels,
     params_channels,
     include_ids = None,
-    brightness_channel = 'light',
+    bright_channel = 'light',
     ):
 
     # Use skimage to get object properties
@@ -294,7 +316,7 @@ def labelimage_extract_features(
                 prop,
                 channels,
                 params_channels['px_width'],
-                brightness_channel = brightness_channel,
+                bright_channel = bright_channel,
             )
             # Init features
             features = np.zeros((len(props), len(names)), dtype=np.float32)
@@ -307,7 +329,7 @@ def labelimage_extract_features(
                 prop,
                 channels,
                 params_channels['px_width'],
-                brightness_channel = brightness_channel,
+                bright_channel = bright_channel,
                 )[0]
             # Assignment to features
             features[i, :] = features_i
@@ -345,7 +367,7 @@ def crowns_add_features(
     # Define standard parameters
     params_standard = {
         'include_ids': None,
-        'brightness_channel' : 'light',
+        'bright_channel' : 'light',
         'exclude_chm_lower': 5,
         'exclude_chm_upper': 40,
     }
@@ -360,7 +382,16 @@ def crowns_add_features(
     labelimg = transformations.polygons_to_labelimage(crowns['polygons'], params_crowns['shape'])
 
     # Check if vegetation indices and hls images are in channels if not extend
-    names_needed = ['ndvi', 'ndvire' ,'ndre', 'grvi', 'hue', 'light', 'sat']
+    names_needed = [
+        'chm',                              # canopy height model
+        'ndvi', 'ndvire', 'ndre', 'grvi',   # veg. indices
+        'light',                            # lightness
+        'nore', 'nor', 'nog', 'nob',        # nir ratios
+        'reor', 'reog', 'reob',             # re ratios
+        'rog', 'rob',                       # red ratios
+        'gob',                              # green ratios
+        ]
+
     if not np.all([name in channels.keys() for name in names_needed]):
         transformations.channels_extend(channels)
 
@@ -378,7 +409,7 @@ def crowns_add_features(
         channels_cleanup,
         params_channels,
         include_ids = params['include_ids'],
-        brightness_channel  = params['brightness_channel'],
+        bright_channel  = params['bright_channel'],
         )
 
     # Assign features to crowns
@@ -386,7 +417,7 @@ def crowns_add_features(
 
     # Assign parameters
     params_crowns['date_time_photometric'] = transformations.current_datetime()
-    params_crowns['features_photometric_brightness_channel'] = params['brightness_channel']
+    params_crowns['features_photometric_brightness_channel'] = params['bright_channel']
     params_crowns['features_photometric_exclude_chm_lower'] = params['exclude_chm_lower']
     params_crowns['features_photometric_exclude_chm_upper'] = params['exclude_chm_upper']
 
