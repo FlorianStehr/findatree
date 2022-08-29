@@ -57,12 +57,10 @@ def prop_to_intensitycoords(prop, channels, bright_channel):
     #    * xy_max, i.e. location of pixel with maximum intensity
     names_intensity = [
         'chm',                              # canopy height model
-        'light',                            # lightness
+        'light', 'sat', 'hue',              # hls color space: lightness, saturation, hue
         'ndvi', 'ndvire', 'ndre', 'grvi',   # veg. indices
-        'nore', 'nor', 'nog', 'nob',        # nir ratios
-        'reor', 'reog', 'reob',             # re ratios
-        'rog', 'rob',                       # red ratios
-        'gob',                              # green ratios
+        'blue','green','red','re','nir',    # absolute colorss
+        'gob','rob','reob','nob',           # color ratios normalized to blue
         ]
 
     names_xy_max = ['chm', 'light']
@@ -384,12 +382,9 @@ def crowns_add_features(
     # Check if vegetation indices and hls images are in channels if not extend
     names_needed = [
         'chm',                              # canopy height model
+        'light', 'sat', 'hue',              # hls color space: lightness, saturation, hue
         'ndvi', 'ndvire', 'ndre', 'grvi',   # veg. indices
-        'light',                            # lightness
-        'nore', 'nor', 'nog', 'nob',        # nir ratios
-        'reor', 'reog', 'reob',             # re ratios
-        'rog', 'rob',                       # red ratios
-        'gob',                              # green ratios
+        'gob','rob','reob','nob',           # color ratios normalized to blue
         ]
 
     if not np.all([name in channels.keys() for name in names_needed]):

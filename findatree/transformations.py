@@ -62,18 +62,9 @@ def channels_extend(
         
         ####### Color ratios
         if 'ratios' in extend_by:
-            channels['nore'] = channels['nir'] / channels['re']
-            channels['nor'] = channels['nir'] / channels['red']
-            channels['nog'] = channels['nir'] / channels['green']
             channels['nob'] = channels['nir'] / channels['blue']
-
-            channels['reor'] = channels['re'] / channels['red']
-            channels['reog'] = channels['re'] / channels['green']
             channels['reob'] = channels['re'] / channels['blue']
-
-            channels['rog'] = channels['red'] / channels['green']
             channels['rob'] = channels['red'] / channels['blue']
-
             channels['gob'] = channels['green'] / channels['blue']
         
         ####### Gray scale texture (local binary pattern)
