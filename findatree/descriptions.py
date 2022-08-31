@@ -90,14 +90,20 @@ def species_id_to_name() -> Dict:
 #%%
 def species_groupby_families(
     family_patterns: List[str],
+    family_names: List[str] = [],
     ) -> Dict:
 
+    if len(family_names) == 0:
+        family_names = family_patterns
+    else:
+        assert len(family_patterns) == len(family_names), '`len(family_patters)` must be `len(family_names)`'
+    
     families = {}
     for family_id, pattern in enumerate(family_patterns):
 
         family = {}
 
-        family['family_name'] = pattern
+        family['family_name'] = family_names[family_id]
         family['species_names'] = [name for id, name in species_id_to_name().items() if bool(re.search(pattern, name, re.IGNORECASE))]
         family['species_ids'] = [id for id, name in species_id_to_name().items() if bool(re.search(pattern, name, re.IGNORECASE))]
 
