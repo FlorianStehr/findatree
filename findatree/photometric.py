@@ -152,11 +152,17 @@ def prop_to_intensitycoords(prop, channels, bright_channel):
 
         # Add coordinate x of pixel with maximum value
         names_features.extend(['x_max_' + name for name in names_xy_max])
-        features.extend( list( idxs[1][ np.argmax(channels_flat[:len(names_xy_max), :], axis=1) ] ) )
+        try:
+            features.extend( list( idxs[1][ np.nanargmax(channels_flat[:len(names_xy_max), :], axis=1) ] ) )
+        except:
+            features.extend([0 for name in names_xy_max])
 
         # Add coordinate y of pixel with maximum value
         names_features.extend(['y_max_' + name for name in names_xy_max])
-        features.extend( list( idxs[0][ np.argmax(channels_flat[:len(names_xy_max), :], axis=1) ] ) )
+        try:
+            features.extend( list( idxs[0][ np.nanargmax(channels_flat[:len(names_xy_max), :], axis=1) ] ) )
+        except:
+            features.extend([0 for name in names_xy_max])
 
         ###### Non-intensity weighted metrics
 
@@ -333,6 +339,29 @@ def labelimage_extract_features(
             features[i, :] = features_i
 
 
+    # Assign decays
+    decay_channel_names = ['chm', 'light']
+
+    for channel_name in decay_channel_names:
+        # Get peak coordinates
+        row_peak_idx = features[:, names.index('y_max_' + channel_name)].astype(np.uint16)
+        col_peak_idx = features[:, names.index('x_max_' + channel_name)].astype(np.uint16)
+        
+        names.append('max_' + channel_name + '_check')                                  # Remove this when check was successful  !!!!             
+        peak_val = channels[channel_name][row_peak_idx, col_peak_idx].reshape(-1,1)     # Remove this when check was successful  !!!!   
+        features = np.concatenate([features, peak_val], axis=1)                         # Remove this when check was successful  !!!!   
+
+        # Loop through all decay channels and collect decay at radius from peak
+        for i in [int(2**i) for i in range(5)]:
+            # Name of decay_channel and append to names
+            decay_name = channel_name + f"_decay{i}"
+            names.append(decay_name)
+
+            # Get decay values at peak and add to features
+            peak_decay = channels[decay_name][row_peak_idx, col_peak_idx].reshape(-1,1)
+            features = np.concatenate([features, peak_decay], axis=1)
+
+
     # Prepare dtype for conversion of features to structured numpy array
     dtypes = ['<f4' for name in names]
 
@@ -340,8 +369,10 @@ def labelimage_extract_features(
     names_uitype = ['id', 'x_mean', 'y_mean', 'x_min_bbox', 'x_max_bbox', 'y_min_bbox', 'y_max_bbox']
     names_uitype.extend(['x_max_' + name for name in channels.keys()])
     names_uitype.extend(['x_min_' + name for name in channels.keys()])
+    names_uitype.extend(['y_max_' + name for name in channels.keys()])
+    names_uitype.extend(['y_min_' + name for name in channels.keys()])
 
-    # Change float32 to uint16 dtype as respectvie fields
+    # Change float32 to uint16 dtype as respective fields
     for i, name in enumerate(names):
         if name in names_uitype:
             dtypes[i] = '<u2'

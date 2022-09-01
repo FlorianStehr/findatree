@@ -7,6 +7,7 @@ import skimage.exposure
 import skimage.segmentation
 import skimage.morphology
 import skimage.feature
+import cv2
 
 import rasterio
 import rasterio.features
@@ -29,9 +30,37 @@ def current_datetime() -> str:
 
 
 #%%
+def kernel_difference_center_meanring(radius: int) -> np.ndarray:
+    """Generate kernel that subtracts the center pixel value of the mean of all pixels at a specified distance = `radius`, i.e. a ring around the center pixel with radius = `radius`.
+
+    Parameters
+    ----------
+    radius : int
+        Eculidean distance of the ring to the center pixel.
+
+    Returns
+    -------
+    np.ndarray
+        Kernel of size (`radius*2+1`,`radius*2+1`) with center pixel = -1 @ kernel[radius, radius] and ring for mean creation at distance = `radius ` from center pixel.
+    """
+    mid = radius
+    diameter = radius * 2 + 1
+
+    distances = np.indices((diameter, diameter)) - np.array([mid, mid])[:, None, None]
+    distances = np.linalg.norm(distances, axis=0)
+
+    kernel = (np.abs(distances - mid) < 0.5).astype(int)
+
+    kernel = kernel / np.sum(kernel.flatten())
+    kernel[mid, mid] = -1
+
+
+    return kernel
+
+#%%
 def channels_extend(
     channels: Dict,
-    extend_by: List = ['ndvi', 'ndvire', 'ndre', 'grvi', 'hls','ratios'],
+    extend_by: List = ['ndvi', 'ndvire', 'ndre', 'grvi', 'hsl', 'ratios','decays'],
     ) -> None:
     """
     Notes:
@@ -41,8 +70,8 @@ def channels_extend(
     * ndre: `(nir - re) / (nir + re)` in `[-1, 1]`
     * grvi: `(green - red) / (green + red)` in `[-1, 1]`
     * h: Hue of hls color space in `[0, 360]`
-    * l: Lightness of hls color space in `[0, 1]`
     * s: Saturation of hls color space in `[0, 1]`
+    * l: Lightness of hls color space in `[0, 1]`
     """
 
     with np.errstate(divide='ignore', invalid='ignore'):  # Avoid division by zero warnings, in this case NaNs will be assigned
@@ -66,14 +95,10 @@ def channels_extend(
             channels['reob'] = channels['re'] / channels['blue']
             channels['rob'] = channels['red'] / channels['blue']
             channels['gob'] = channels['green'] / channels['blue']
-        
-        ####### Gray scale texture (local binary pattern)
-        # if 'lbp' in extend_by:
-        #     img = channels['blue'] + channels['green'] + channels['red']
-        #     channels['lbp'] = skimage.feature.local_binary_pattern(img, 16, 2, method='uniform')
+
     
     # HLS color space
-    if 'hls' in extend_by:
+    if 'hsl' in extend_by:
         
         rgb = np.empty((channels['blue'].shape[0], channels['blue'].shape[1], 3), dtype=np.float32)
         rgb[:,:,0] = channels['red']
@@ -84,6 +109,33 @@ def channels_extend(
         channels['hue'] = hls[:,:,0]
         channels['light'] = hls[:,:,1]
         channels['sat'] = hls[:,:,2]
+
+    ####### Intensity decay around center pixel
+    if 'decays' in extend_by:
+        
+        for radius in [int(2**i) for i in range(0,5)]:
+            
+            img = channels['chm'].copy()
+            img[~np.isfinite(img)] = 0
+
+            kernel = kernel_difference_center_meanring(radius)
+            channels[f"chm_decay{radius}"] = cv2.filter2D(
+                src = img,
+                ddepth = -1,
+                kernel = kernel,
+                borderType = cv2.BORDER_REFLECT,
+                )
+
+            img = channels['light'].copy()
+            img[~np.isfinite(img)] = 0
+
+            kernel = kernel_difference_center_meanring(radius)
+            channels[f"light_decay{radius}"] = cv2.filter2D(
+                src = img,
+                ddepth = -1,
+                kernel = kernel,
+                borderType = cv2.BORDER_REFLECT,
+                )
 
     pass
 

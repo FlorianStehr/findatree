@@ -4,6 +4,7 @@ from typing import Dict, List, Tuple
 from matplotlib.pyplot import colorbar, figimage
 import numpy as np
 import importlib
+import re
 
 import bokeh.plotting
 import bokeh.models
@@ -149,6 +150,10 @@ class Plotter:
 
                 except:
                     pass
+        
+        for name in patches_data:
+            if bool(re.search('^y_min|^y_max|^y_mean|^y_mean', name)):
+                patches_data[name] = [offset - val for val in patches_data[name]]
 
         # Update source
         self.source_crowns[params_crowns['origin']] = bokeh.plotting.ColumnDataSource(data=patches_data)
@@ -210,7 +215,7 @@ class Plotter:
         # Add hover tool to rgb image
         hover_tool = bokeh.models.HoverTool(
             tooltips=[
-                ('(x, y)', '($x{0.1a}, $y{0.1a})'),
+                ('(x, y)', '($x{int}, $y{int})'),
             ],
             renderers = [img],
             description = 'Hover: RGB',
@@ -253,7 +258,7 @@ class Plotter:
         # Add hover tool
         hover_tool = bokeh.models.HoverTool(
             tooltips=[
-                    ('(x, y)', '($x{0.1a}, $y{0.1a})'),
+                    ('(x, y)', '($x{int}, $y{int})'),
                     (channel_name,f"@{channel_name}"),
             ],
             renderers = [img],
