@@ -153,17 +153,11 @@ def _reproject_to_primary(paths_dict: Dict, px_width: float) -> Tuple[Dict, Dict
                     resampling=Resampling.nearest
                 )
                 
-                # Assign zeros to saturated values within source dtype
-                saturation_value = -1e-6
+                # Handel minimal values of each dtype
                 try:
-                    dest_band[dest_band.astype(source_dtype) == np.iinfo(source_dtype).max] = saturation_value
-                    dest_band[dest_band.astype(source_dtype) == np.iinfo(source_dtype).min] = saturation_value
+                    dest_band[dest_band.astype(source_dtype) == np.iinfo(source_dtype).min] = 1
                 except:
-                    dest_band[dest_band.astype(source_dtype) == np.finfo(source_dtype).max] = saturation_value
-                    dest_band[dest_band.astype(source_dtype) == np.finfo(source_dtype).min] = saturation_value
-                
-                # Close small NaN holes in band
-                # dest_band = _close_nan_holes(dest_band)[0]
+                    dest_band[dest_band.astype(source_dtype) == np.finfo(source_dtype).min] = 0
 
                 # Assign band to bands
                 dest_bands[:,:,i_raster] = dest_band
