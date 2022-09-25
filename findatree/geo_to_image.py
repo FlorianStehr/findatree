@@ -229,89 +229,8 @@ def _reproject_to_primary(paths_dict: Dict, px_width: float) -> Tuple[Dict, Dict
 
     return cs_prim, params
 
-#%%
-
-def _close_nan_holes(img: np.ndarray, max_pxs: int = 200) -> Tuple[np.ndarray, np.ndarray]:
-    """Close small NaN holes in image with medium value of surroundings.
-
-    Paramaters:
-    -----------
-    img: np.ndarray
-        Image of size (m,n)
-    max_pxs: int=10**2
-        Only holes of ```len(hole.flatten()) <= max_pxs`` are closed.
-
-    Returns:
-    -------
-    Tuple[np.ndarray, np.ndarray]
-        img_closed: np.ndarray
-            Copy of original image with closed NaN holes.
-        mask:
-            Mask with: NaN-holes = 1, Surrounding = 2, All other = 0.
-    """
-
-    # Init return image
-    img_closed = img.copy()
-
-    # Create binary mask where pixels of value: NaN -> 1, other -> 0
-    mask = np.zeros(img.shape, dtype=np.uint8)
-    mask[np.isnan(img)] = 1
-
-    # Label connected components (ccs)
-    labels = measure.label(mask, background=0, return_num=False, connectivity=1)
-
-    # Get indices of ccs 
-    ccs_idx = transformations.labelimage_to_idxlist(labels)
-
-    # Remove all ccs with len(cc) > max_pxs
-    ccs_idx = [cc_idx for cc_idx in ccs_idx if len(cc_idx[0]) <= max_pxs]
-
-    # Define kernel for dilation of ccs
-    kernel = np.ones((3,3), dtype=np.uint8)
-
-    for i, cc_idx in enumerate(ccs_idx):
-        # Bounding box for cc
-        # Also check if bounding box limits are not outside of image shape
-        box_lims = [
-            (
-                max(np.min(cc_idx[0]) - 1, 0),
-                min(np.max(cc_idx[0]) + 2, img.shape[0]),
-            ),
-            (
-                min(np.min(cc_idx[1]) - 1, 0),
-                max(np.max(cc_idx[1]) + 2, img.shape[1]),
-            ),
-        ]
-        
-        # Create small image of cc in box
-        cc_box = mask[box_lims[0][0]:box_lims[0][1], box_lims[1][0]:box_lims[1][1]]
-
-        # Dilate cc in box
-        cc_box_dilate = cv.dilate(cc_box, kernel)
-        
-        # Difference between dilated and original cc, i.e. a one pixel ring around the cc
-        cc_box_ring = cc_box_dilate - cc_box
-        
-        # Get box-indices of difference
-        cc_box_ring_idx = np.where(cc_box_ring == 1)
-
-        # Convert box_indices back to original mask coordinates
-        cc_ring_idx = (cc_box_ring_idx[0] + box_lims[0][0], cc_box_ring_idx[1] + box_lims[1][0])
-
-        # Fill hole in image with median of ring around hole
-        try:
-            img_closed[cc_idx] = np.nanmedian(img_closed[cc_ring_idx])
-        except:
-            img_closed[cc_idx] = np.nan
-
-        # Assign val of 2 to ring values in mask
-        mask[cc_ring_idx] = 2
-
-    return img_closed, mask
-
 
 #%%
-
 def _channels_normalize(channels_reproject: Dict) -> Dict:
     """Normalize/convert reprojected rasters (primary channels) to secondary channels.
 

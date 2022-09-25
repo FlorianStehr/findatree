@@ -1,27 +1,19 @@
-name: findatree_v01
-channels:
-  - defaults
-  - conda-forge
-  - pip
+name: findatree_test
 dependencies:
   - python=3.9
+  - numpy
   - pandas
   - matplotlib
   - numba
-  - scipy
-  - numpy
-  - rasterio
-  - opencv
-  - pyshp
   - scikit-image
-  - ipykernel
-  - ipympl
-  - hdbscan
+  - scipy
   - tqdm
   - h5py
-  - holoviews
   - bokeh
-  - datashader
-  - geojson
-  - shapely
-prefix: C:\Users\flori\Anaconda3\envs\findatree_v01
+  - jupyter
+  - conda-forge::gdal
+  - conda-forge::rasterio
+  - conda-forge::opencv
+  - conda-forge::pyshp
+  - conda-forge::geojson
+  - conda-forge::shapely
