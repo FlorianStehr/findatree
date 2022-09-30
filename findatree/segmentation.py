@@ -56,9 +56,6 @@ def _local_thresholding(img_in: np.ndarray, mask: np.ndarray, width: float, px_w
     width_px = int(np.round(width_px))
     if width_px % 2 == 0:
         width_px +=1 
-    
-    # Print kernel width
-    # print(f"    ... [segmentation._local_thresholding()] Gaussian thresholding kernel width: {width:.1f} [m] = {width_px:.0f} [px]")
 
     # Local thresholding
     thresh = filters.threshold_local(
@@ -108,7 +105,7 @@ def _watershed_by_peaks_in_disttrafo(
     Notes:
     ------
     1. Remove small holes of `mask` which are `< area_threshold`
-    2. Computing distance transform (-> `dist`) of `mask`
+    2. Compute distance transform (-> `dist`) of `mask`
     3. Finding local peaks (-> `peaks`) within `dist` separated by minimum distance `peak_min_distance`.
     4. Marker based watershed using `peaks` is carried out on `- dist * image` within mask (-> `labels`)
     5. Small labels are removed which are `< label_min_size`
@@ -119,7 +116,7 @@ def _watershed_by_peaks_in_disttrafo(
 
     # Remove small holes in mask
     hole_min_area_px = int(np.round(hole_min_area / px_width**2))
-    # print(f"    ... [segmentation._watershed_by_peaks_in_disttrafo()] Removing holes of area: {hole_min_area:.2f} [m**2] = {hole_min_area_px:.0f} [px]")
+
     mask = morph.remove_small_holes(
         mask.astype(np.bool_),
         area_threshold=hole_min_area_px,
@@ -132,7 +129,6 @@ def _watershed_by_peaks_in_disttrafo(
 
     # Set minimum distance in [m] and [px]
     peak_min_distance_px = int(np.round(peak_min_distance / px_width))
-    # print(f"    ... [segmentation._watershed_by_peaks_in_disttrafo()] Local peaks min. distance: {peak_min_distance:.2f} [m] = {peak_min_distance_px:.0f} [px]")
 
     # Find local peaks in distance transform of mask
     peaks_idx = feature.peak_local_max(dist, min_distance=peak_min_distance_px)
@@ -164,7 +160,6 @@ def _watershed_by_peaks_in_disttrafo(
 
     # Remove small labels after watershed
     label_min_area_px = int(np.round(label_min_area / px_width**2))
-    # print(f"    ... [segmentation._watershed_by_peaks_in_disttrafo()] Removing labels of area: {label_min_area:.2f} [m**2] = {label_min_area_px:.0f} [px]")
     labels = morph.remove_small_objects(
         labels,
         min_size=label_min_area_px,
@@ -247,11 +242,11 @@ def watershed(
         'thresh_global_chm_lower': 5,
         'thresh_global_chm_upper': 40,
         'thresh_global_ndvi': 0.3,
-        'thresh_channel': 'light',
+        'thresh_channel': 'avg',
         'thresh_downscale': 1,
         'thresh_blur': False,
         'thresh_width': 30,
-        'water_channel': 'light',
+        'water_channel': 'avg',
         'water_downscale': 0,
         'water_peak_dist': 1.2,
         'water_hole_min_area': 0.,
@@ -266,9 +261,9 @@ def watershed(
 
     ######################################### (1) Prepare channels at defined px_widths for thresholding and watershed
     # Check if vegetation indices and hls images are in channels if not extend
-    names_needed = ['ndvi', 'ndvire' ,'ndre', 'grvi', 'hue', 'light', 'sat']
+    names_needed = ['ndvi', params['thresh_channel'], params['water_channel']]
     if not np.all([name in cs.keys() for name in names_needed]):
-        transformations.channels_extend(cs)
+        transformations.channels_extend(cs, names_needed)
 
     # (Downscaled) Thresholding channels
     cs_thresh, params_thresh = geo_to_image._channels_downscale(cs, params_cs, downscale=params['thresh_downscale'])

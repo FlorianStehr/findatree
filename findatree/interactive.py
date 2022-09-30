@@ -13,10 +13,10 @@ import bokeh.layouts
 from bokeh.plotting.figure import Figure
 from bokeh.models import Column
 from bokeh.models import Toggle
-from zmq import EVENT_CLOSED
 
 import findatree.transformations as transformations
 import findatree.geo_to_image as geo_to_image
+
 importlib.reload(transformations)
 
 #%%
@@ -117,6 +117,13 @@ class Plotter:
         blue = self.channels['blue']
         rgb, rgba = transformations.rgb_to_RGBA(red, green, blue, perc)
         data['rgb'] = [rgba]
+        
+        # Add false RGB channel in uint32 RGBA format
+        red = self.channels['nir']
+        green = self.channels['red']
+        blue = self.channels['green']
+        rgb, rgba = transformations.rgb_to_RGBA(red, green, blue, perc)
+        data['rgb_false'] = [rgba]
 
         # Update
         self.source = bokeh.plotting.ColumnDataSource(data=data)
@@ -193,10 +200,10 @@ class Plotter:
         return fig
 
 #%%
-    def figures_add_rgb(self, perc:float = 0.5):
+    def figures_add_rgb(self, perc:float = 0.5, rgb_name='rgb'):
         
         # Add figure
-        fig = self._figure_create('fig_rgb')
+        fig = self._figure_create('fig_' + rgb_name)
 
         # Add rgb channel to source
         self._source_add_rgb(perc)
@@ -204,12 +211,12 @@ class Plotter:
         # Add rgb image to figure
         img = fig.image_rgba(
             source=self.source,
-            image='rgb',
+            image=rgb_name,
             x='x',
             y='y',
             dw='width',
             dh='height',
-            name='image_rgb',
+            name='image_' + rgb_name,
         )
 
         # Add hover tool to rgb image
@@ -224,7 +231,7 @@ class Plotter:
         fig.add_tools(hover_tool)
 
         # Update
-        self.figures['rgb'] = [fig]
+        self.figures[rgb_name] = [fig]
 
         pass
         

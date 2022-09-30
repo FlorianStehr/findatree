@@ -60,19 +60,9 @@ def kernel_difference_center_meanring(radius: int) -> np.ndarray:
 #%%
 def channels_extend(
     channels: Dict,
-    extend_by: List = ['ndvi', 'ndvire', 'ndre', 'grvi', 'hsl', 'ratios','decays'],
+    extend_by: List = ['ndvi', 'ndvire', 'ndre', 'grvi', 'hsl', 'ratios','decays', 'avg'],
     ) -> None:
-    """
-    Notes:
-    ------
-    * ndvi: `(nir - red) / (nir + red)` in `[-1, 1]`
-    * ndvire: `(re - red) / (re + red)` in `[-1, 1]`
-    * ndre: `(nir - re) / (nir + re)` in `[-1, 1]`
-    * grvi: `(green - red) / (green + red)` in `[-1, 1]`
-    * h: Hue of hls color space in `[0, 360]`
-    * s: Saturation of hls color space in `[0, 1]`
-    * l: Lightness of hls color space in `[0, 1]`
-    """
+
 
     with np.errstate(divide='ignore', invalid='ignore'):  # Avoid division by zero warnings, in this case NaNs will be assigned
 
@@ -136,6 +126,19 @@ def channels_extend(
                 kernel = kernel,
                 borderType = cv2.BORDER_REFLECT,
                 )
+                
+                
+    if 'avg' in extend_by:
+
+        all = np.empty((channels['blue'].shape[0], channels['blue'].shape[1], 5), dtype=np.float32)
+        all[:,:,0] = channels['blue'].copy()
+        all[:,:,1] = channels['green'].copy()
+        all[:,:,2] = channels['red'].copy()
+        all[:,:,3] = channels['re'].copy()
+        all[:,:,4] = channels['nir'].copy()
+  
+        channels['avg'] = np.mean(all, axis=2)
+    
 
     pass
 
@@ -174,9 +177,8 @@ def rgb_to_RGBA(red:np.ndarray, green: np.ndarray, blue: np.ndarray, perc: float
     mask = np.any(np.isnan(rgb), axis=2)
 
     # Get image percentiles
-    perc = 1
     vmin = np.nanpercentile(rgb, perc)
-    vmax = np.nanpercentile(rgb, 100-perc)
+    vmax = np.nanpercentile(rgb, 100 - perc)
 
     # Convert image from np.float32 to np.uint8 by rescaling to percentiles
     rgb_ui8 = skimage.exposure.rescale_intensity(

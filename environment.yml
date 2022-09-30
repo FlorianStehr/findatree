@@ -1,16 +1,19 @@
-name: findatree_test
+name: findatree
 dependencies:
   - python=3.9
   - numpy
   - pandas
   - matplotlib
   - numba
-  - scikit-image
   - scipy
   - tqdm
   - h5py
   - bokeh
-  - jupyter
+  - conda-forge::scikit-image
+  - conda-forge::notebook
+  - conda-forge::nb_conda_kernels
+  - conda-forge::jupyter_contrib_nbextensions
+  - conda-forge::autopep8
   - conda-forge::gdal
   - conda-forge::rasterio
   - conda-forge::opencv
