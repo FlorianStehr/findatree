@@ -232,14 +232,17 @@ def _reproject_to_primary(paths_dict: Dict, px_width: float) -> Tuple[Dict, Dict
 
 
 #%%
-def _channels_normalize(channels_reproject: Dict) -> Dict:
-    """Normalize/convert reprojected rasters (primary channels) to secondary channels.
+def _channels_normalize(
+    channels_reproject: Dict,
+    ) -> Tuple:
+    """Normalize/convert reprojected rasters (primary channels).
 
     Parameters
     ----------
-    channels_prim : Dict
-        Dictionary of of primary channels as np.ndarray of dtype=np.float64, as returned by geo_to_image._reproject_to_primary().
-
+    channels_reproject : Dict
+        Dictionary of of reprojected primary channels as np.ndarray of dtype=np.float64, as returned by geo_to_image._reproject_to_primary().
+        Must contain following channels/keys `'blue', 'green', 'red', 're', 'nir', 'dsm', 'dtm'`.
+        
     Returns
     -------
     Dict
@@ -248,31 +251,51 @@ def _channels_normalize(channels_reproject: Dict) -> Dict:
             
     Notes:
     ------
-    Color channels `['blue', 'green', 'red', 're', 'nir']` are normalized to interval [0, 1].
+    Color channels `['blue', 'green', 'red', 're', 'nir']` are normalized to interval [0, 2].
+    Normalization constant  for color channels is `2^15 - 1` according to Agisoft standards, 
+    where maximum reflection of 1 occurs at this value.
+    I.e. also values > 1 can occur after normalization if calibration was not sucsessful.
+    The ratio of maxed out channels to the total number of finite pixels (key: `'max_ratio_*'`) is saved in the output parameters dictionary for each color channel.
+    
     Canopy height model `chm` is normalized to interval [0, inf[.
+    
 
     """
     channels = {}
 
     ############################## Primary channel normalization
     # Normalize and convert to float32 dtype
-    channels['blue'] = (channels_reproject['blue'] / (2**16 - 1)).astype(np.float32)
-    channels['green'] = (channels_reproject['green'] / (2**16 - 1)).astype(np.float32)
-    channels['red'] = (channels_reproject['red'] / (2**16 - 1)).astype(np.float32)
-    channels['re'] = (channels_reproject['re'] / (2**16 - 1)).astype(np.float32)
-    channels['nir'] = (channels_reproject['nir'] / (2**16 - 1)).astype(np.float32)
+    norm_const = 2**15 - 1
+    channels['blue'] = (channels_reproject['blue'] / norm_const).astype(np.float32)
+    channels['green'] = (channels_reproject['green'] / norm_const).astype(np.float32)
+    channels['red'] = (channels_reproject['red'] / norm_const).astype(np.float32)
+    channels['re'] = (channels_reproject['re'] / norm_const).astype(np.float32)
+    channels['nir'] = (channels_reproject['nir'] / norm_const).astype(np.float32)
 
 
-    ############################## Secondary channels
-    # Canopy height model (CHM)
+    ############################## CHM
     channels['chm'] = (channels_reproject['dsm'] - channels_reproject['dtm']).astype(np.float32)
 
     # Set all below zero values to zero
     for key in channels:
         img = channels[key]
         img[img <= 0] = 0
+        
+       
+    ############################## Get ratio of finite pixels to maxed out pixels (>1)
+    # Total number of finite pixels
+    n_px_finite = np.sum(np.isfinite(channels['blue']).flatten())
+    
+    # Define color channels
+    color_names = ['blue', 'green', 'red', 're', 'nir']
+    
+    # Loop through color channels and compute ratio of maxed out pixels
+    params = {}
+    for name in color_names:
+        n_px_max = np.sum((channels[name] >= 1).flatten())
+        params['max_ratio_' + name] = n_px_max / n_px_finite
 
-    return channels
+    return channels, params
 
 
 #%%
@@ -285,10 +308,10 @@ def _channels_downscale(
 
     Parameters
     ----------
-    channels_sec: Dict
-        Dictionary of primary/secondary channels as np.ndarray of dtype=np.float64, as returned by geo_to_image._channels_primary_to_secondary().
-    params_sec: Dict
-        Dictionary of parameters of primary/secondary channels, as returned by geo_to_image._channels_primary_to_secondary().
+    channels_in: Dict
+        Dictionary of channels as np.ndarray of dtype=np.float32.
+    params_in: Dict
+        Dictionary of parameters of channels, must contain key `'px_width_reproject'`.
     downscale : int, optional
         Pixel downscale factor by using gaussian image pyramids, by default 0.
 
@@ -296,7 +319,7 @@ def _channels_downscale(
     -------
     Tuple[Dict, Dict]
         channels : Dict
-            Dictionary of downscaled secondary channels as np.ndarray of dtype=np.float64.
+            Dictionary of downscaled channels as np.ndarray of dtype=np.float32.
         params : Dict
         * px_width [float]: Final ajusted pixel width after downscaling in meters.
         * affine [np.ndarray]: Affine geo. transform after downscaling.
@@ -337,16 +360,17 @@ def channels_load(
 
     This function combines:
     * findatree.io._find_paths_in_dirs()
-    * findatree.geo_to_image._reproject_to_primary()
+    * findatree.geo_to_image._reproject_to_channels()
     * findatree.geo_to_image._channels_primary_to_secondary() 
-    * findatree.geo_to_image._channels_downscale
+    * findatree.geo_to_image._channels_downscale()
 
     Parameters
     ----------
     dir_names : List[str]
         List of absolute paths to all folders containing the necessary dsm, dtm and ortho rasters.
     params : Dict
-        * px_width [float]: Reprojection pixel width in meters, by default 0.2.
+        * tnr [int]: Area identifier.
+        * px_width_reproject [float]: Reprojection pixel width in meters, by default 0.2.
         * downscale [int]: Additionaly downscale px_width after reprojection by factor `2**(downscale)` using gaussian image pyramids.
     verbose: bool
         Print parameters at end of execution, by default True.
@@ -355,11 +379,11 @@ def channels_load(
     -------
     Tuple[Dict, Dict]
         channels: Dict[np.ndarray, ...]
-            Dict. of all normalized secondary channels as np.ndarray of type np.float32, as returned by findatree.geo_to_image._channels_primary_to_secondary().
-            Keys are: ['blue', 'green', 'red', 're', 'nir', 'chm', 'ndvi', 'ndvire', 'ndre', 'RGB', 'rgb', 'h', 'l', 's'].
+            Normalized and downscaled channels as np.ndarray of type np.float32.
+            Keys are: ['blue', 'green', 'red', 're', 'nir', 'chm'].
         params: Dict
         * date_time [str]: Processing date and time
-        * tnr [int]: Area number
+        * tnr [int]: Area identifier
         * path_dsm [str]: Absolute path to dsm raster
         * path_dtm [str]: Absolute path to dtm raster
         * path_ortho [str]: Absolute path to ortho raster
@@ -393,7 +417,7 @@ def channels_load(
     channels_reprojected, params_reprojected, = _reproject_to_primary(paths_dict, px_width=params['px_width_reproject'])
     
     # Normalize reprojected channels
-    channels_normalized = _channels_normalize(channels_reprojected)
+    channels_normalized, params_normalized = _channels_normalize(channels_reprojected)
 
     # Downscale normalized channels
     channels_downscaled, params_downscaled = _channels_downscale(channels_normalized, params_reprojected, downscale=params['downscale'])
@@ -415,6 +439,10 @@ def channels_load(
     params['affine'] = params_downscaled['affine']
     params['px_width'] = params_downscaled['px_width']
     params['shape'] = params_downscaled['shape']
+    
+    # Add maxed out pixel ratios from normalization to params
+    for key, val in params_normalized.items():
+        params[key] = val
     
     # Sort parameters according to key
     params = dict([(key, params[key]) for key in sorted(params.keys())])
