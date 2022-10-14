@@ -7,35 +7,21 @@ from numpy.lib.recfunctions import unstructured_to_structured
 from tqdm import tqdm
 
 import findatree.transformations as transformations
+import findatree.photometric.shadow as shadow
 
 importlib.reload(transformations)
-
-#%%
-def prop_to_areas(prop):
-    
-    area_names = [
-        'area',
-        'area_convex',
-        'area_filled',
-    ]
-    areas = np.array([prop[area_name] for area_name in area_names])
-
-    return areas, area_names
-
+importlib.reload(shadow)
 
 #%%
 def prop_to_distances(prop):
     distance_names = [
-        'axis_major_length',
-        'axis_minor_length',
-        'equivalent_diameter_area',
         'perimeter',
-        'perimeter_crofton',
         'feret_diameter_max',
     ]
     distances = np.array([prop[distance_name] for distance_name in distance_names], dtype=np.float32)
 
     return distances, distance_names
+    
 
 #%%
 def prop_to_ratios(prop):
@@ -47,10 +33,116 @@ def prop_to_ratios(prop):
     ratios = np.array([prop[ratio_name] for ratio_name in ratio_names], dtype=np.float32)
 
     return ratios, ratio_names
+    
 
+def prop_to_idxs(prop, channels):
+
+    # Get indices of labeled region
+    idxs = prop['coords']
+    idxs = (idxs[:,0], idxs[:,1])
+    
+    # Blue values of the labeled region (shadow mask was already applied in all channels!)
+    vals = channels['blue'][idxs]
+    
+    # Non-shadow, i.e. bright pixel indices
+    idxs_bright = (
+        idxs[0][np.isfinite(vals)],
+        idxs[1][np.isfinite(vals)],
+    )
+    
+    return idxs, idxs_bright
+    
 
 #%%
-def prop_to_intensitycoords(prop, channels, bright_channel):
+def idxs_to_areas(idxs, idxs_bright):
+    
+    ##### Area of all pixels in the labeled region
+    area = len(idxs[0])    
+    
+    ##### Area of the non-shadow pixels
+    # Area of non-shadow pixels (i.e. finite values) in the labeled region
+    area_bright = len(idxs_bright[0])
+
+    # Add values and names to output
+    areas = np.array([area, area_bright], dtype=np.float32)
+    area_names = ['area', 'area_bright']
+    
+    return areas, area_names
+
+
+def idxs_to_coords(idxs, idxs_bright, channels):
+    
+    coord_names_max = ['chm', 'avg']
+    coord_names = []
+    coords = []
+    
+    #### All pixels
+    # Add (unweighted) center coordinate x in pixels (mean)
+    coord_names.append('x_mean')
+    coords.append(np.mean(idxs[1]))
+
+    # Add (unweighted) center coordinate y in pixels (mean)
+    coord_names.append('y_mean')
+    coords.append(np.mean(idxs[0]))
+
+    # Add bounding box minimum of all pixels in x in pixels
+    coord_names.append('x_min_bbox')
+    coords.append(np.min(idxs[1]))
+
+    # Add bounding box maximum of all pixels in x in pixels
+    coord_names.append('x_max_bbox')
+    coords.append(np.max(idxs[1]))
+
+    # Add bounding box minimum of all pixels in y in pixels
+    coord_names.append('y_min_bbox')
+    coords.append(np.min(idxs[0]))
+
+    # Add bounding box maximum of all pixels in y in pixels
+    coord_names.append('y_max_bbox')
+    coords.append(np.max(idxs[0]))
+    
+    #### Coordinates of maximum intensity
+    # Add coordinate x of pixel with maximum intensity
+    coord_names.extend(['x_max_' + name for name in coord_names_max])
+    try:
+        coords.extend([idxs[1][np.nanargmax(channels[name][idxs])] for name in coord_names_max])
+    except:
+        coords.extend([np.nan for name in coord_names_max])
+
+    # Add coordinate y of pixel with maximum intensity
+    coord_names.extend(['y_max_' + name for name in coord_names_max])
+    try:
+        coords.extend([idxs[0][np.nanargmax(channels[name][idxs])] for name in coord_names_max])
+    except:
+        coords.extend([np.nan for name in coord_names_max])
+        
+    
+    #### Non shadow pixels
+    if len(idxs_bright[0]) > 0:
+        # Add bounding box minimum of all pixels in x in pixels
+        coord_names.append('x_min_bbox_bright')
+        coords.append(np.min(idxs_bright[1]))
+
+        # Add bounding box maximum of all pixels in x in pixels
+        coord_names.append('x_max_bbox_bright')
+        coords.append(np.max(idxs_bright[1]))
+
+        # Add bounding box minimum of all pixels in y in pixels
+        coord_names.append('y_min_bbox_bright')
+        coords.append(np.min(idxs_bright[0]))
+
+        # Add bounding box maximum of all pixels in y in pixels
+        coord_names.append('y_max_bbox_bright')
+        coords.append(np.max(idxs_bright[0]))
+    else:
+        coord_names.extend(['x_min_bbox_bright', 'x_max_bbox_bright', 'y_min_bbox_bright', 'y_max_bbox_bright'])
+        coords.extend([np.nan]*4)
+        
+    return coords, coord_names
+    
+'''  
+#%%
+def prop_to_intensitycoords(prop, channels):
     
     ####################### Define image-indices and channel values of the segment
 
@@ -61,8 +153,9 @@ def prop_to_intensitycoords(prop, channels, bright_channel):
         'chm',                              # canopy height model
         'light', 'sat', 'hue',              # hls color space: lightness, saturation, hue
         'ndvi', 'ndvire', 'ndre', 'grvi',   # veg. indices
-        'blue','green','red','re','nir',    # absolute colorss
+        'blue','green','red','re','nir',    # absolute colors
         'gob','rob','reob','nob',           # color ratios normalized to blue
+        'avg',                              # average over all channels
         ]
 
     names_xy_max = ['chm', 'light']
@@ -150,51 +243,7 @@ def prop_to_intensitycoords(prop, channels, bright_channel):
 
         # Add 25 percentile value of each channel
         names_features.extend(['perc25_' + name for name in names_intensity])
-        features.extend( list( np.nanpercentile(channels_flat, 25, axis=1) ) )
-
-        # Add coordinate x of pixel with maximum value
-        names_features.extend(['x_max_' + name for name in names_xy_max])
-        try:
-            features.extend( list( idxs[1][ np.nanargmax(channels_flat[:len(names_xy_max), :], axis=1) ] ) )
-        except:
-            features.extend([0 for name in names_xy_max])
-
-        # Add coordinate y of pixel with maximum value
-        names_features.extend(['y_max_' + name for name in names_xy_max])
-        try:
-            features.extend( list( idxs[0][ np.nanargmax(channels_flat[:len(names_xy_max), :], axis=1) ] ) )
-        except:
-            features.extend([0 for name in names_xy_max])
-
-        ###### Non-intensity weighted metrics
-
-        # Add total number of pixels not including nan pixels
-        names_features.extend(['n_px'])
-        features.append( len(idxs[0]) - np.sum( np.isnan( channels_flat[0, :]) ) )
-
-        # Add (unweighted) center coordinate x in pixels (mean)
-        names_features.extend(['x_mean'])
-        features.extend( [ np.mean(idxs[1] ) ] )
-
-        # Add (unweighted) center coordinate y in pixels (mean)
-        names_features.extend(['y_mean'])
-        features.extend( [ np.mean(idxs[0] ) ] )
-
-        # Add bounding box minimum in x in pixels
-        names_features.extend(['x_min_bbox'])
-        features.extend( [ np.min(idxs[1] ) ] )
-
-        # Add bounding box maximum in x in pixels
-        names_features.extend(['x_max_bbox'])
-        features.extend( [ np.max(idxs[1] ) ] )
-
-        # Add bounding box minimum in y in pixels
-        names_features.extend(['y_min_bbox'])
-        features.extend( [ np.min(idxs[0] ) ] )
-
-        # Add bounding box maximum in y in pixels
-        names_features.extend(['y_max_bbox'])
-        features.extend( [ np.max(idxs[0] ) ] )
+        features.extend( list( np.nanpercentile(channels_flat, 25, axis=1) )
 
 
 
@@ -228,27 +277,6 @@ def prop_to_intensitycoords(prop, channels, bright_channel):
         names_features.extend(['perc25_bright_' + name for name in names_intensity])
         features.extend( list( np.nanpercentile(channels_flat_bright, 25, axis=1) ) )
 
-        ###### Non-intensity weighted metrics
-
-        # Add number of brightest pixels not including nan pixels
-        names_features.extend(['n_px_bright'])
-        features.append( len(idxs_bright[0]) - np.sum( np.isnan( channels_flat_bright[0, :]) ) )
-
-        # Add bounding box minimum in x of brightest pixels in pixels
-        names_features.extend(['x_min_bbox_bright'])
-        features.extend( [ np.min(idxs_bright[1] ) ] )
-
-        # Add bounding box maximum in x of brightest pixels in pixels
-        names_features.extend(['x_max_bbox_bright'])
-        features.extend( [ np.max(idxs_bright[1] ) ] )
-
-        # Add bounding box minimum in y of brightest pixels in pixels
-        names_features.extend(['y_min_bbox_bright'])
-        features.extend( [ np.min(idxs_bright[0] ) ] )
-
-        # Add bounding box maximum in y of brightest pixels in pixels
-        names_features.extend(['y_max_bbox_bright'])
-        features.extend( [ np.max(idxs_bright[0] ) ] )
 
     ############# Create final output array
 
@@ -256,42 +284,49 @@ def prop_to_intensitycoords(prop, channels, bright_channel):
 
     return features, names_features
 
+'''
 
 #%%
-def prop_to_allfeatures(prop, channels, px_width, bright_channel):
+def prop_to_allfeatures(prop, channels, px_width):
     
     # Get label
     label_name = ['id']                 # We will store the crown identifier as `id` ...
     label = np.array([ prop['label'] ]) # ... but in skimage it's called `label`
-
-    # Get areas
-    areas, area_names = prop_to_areas(prop)
-    areas = areas * px_width**2 # Unit conversion from px to [m**2]
-
+    
     # Get distances
     distances, distance_names = prop_to_distances(prop)
     distances = distances * px_width # Unit conversion from px to [m]
-
+    
     # Get ratios
     ratios, ratio_names = prop_to_ratios(prop)
+    
+    # Get indices of all and non-shadow pixels in labeled region
+    idxs, idxs_bright = prop_to_idxs(prop, channels)
+    
+    # Get areas
+    areas, area_names = idxs_to_areas(idxs, idxs_bright)
+    areas = areas * px_width**2 # Unit conversion from px to [m**2]
+    
+    # Get coordinates of all and non-shadow pixels in labeled region
+    coords, coord_names = idxs_to_coords(idxs, idxs_bright, channels)
 
     # Get intensities and coordinates
-    intcoords, intcoord_names = prop_to_intensitycoords(
-        prop,
-        channels, 
-        bright_channel=bright_channel,
-        )
+    # intcoords, intcoord_names = prop_to_intensitycoords(
+        # prop,
+        # channels, 
+        # )
 
     # Concatenate all props and corresponding names
     features = np.concatenate(
         (label,
-        areas,
         distances,
         ratios,
-        intcoords,
+        areas,
+        coords,
+        # intcoords,
         ),
     )
-    names = label_name + area_names + distance_names + ratio_names + intcoord_names
+    names = label_name + distance_names + ratio_names + area_names + coord_names #+ intcoord_names
 
     return features, names
 
@@ -302,7 +337,6 @@ def labelimage_extract_features(
     channels,
     params_channels,
     include_ids = None,
-    bright_channel = 'light',
     ):
 
     # Use skimage to get object properties
@@ -323,7 +357,6 @@ def labelimage_extract_features(
                 prop,
                 channels,
                 params_channels['px_width'],
-                bright_channel = bright_channel,
             )
             # Init features
             features = np.zeros((len(props), len(names)), dtype=np.float32)
@@ -336,14 +369,13 @@ def labelimage_extract_features(
                 prop,
                 channels,
                 params_channels['px_width'],
-                bright_channel = bright_channel,
                 )[0]
             # Assignment to features
             features[i, :] = features_i
 
-
+    '''
     # Assign decays
-    decay_channel_names = ['chm', 'light']
+    decay_channel_names = ['chm', 'avg']
 
     for channel_name in decay_channel_names:
         # Get peak coordinates
@@ -359,13 +391,18 @@ def labelimage_extract_features(
             # Get decay values at peak and add to features
             peak_decay = channels[decay_name][row_peak_idx, col_peak_idx].reshape(-1,1)
             features = np.concatenate([features, peak_decay], axis=1)
-
+    '''
 
     # Prepare dtype for conversion of features to structured numpy array
     dtypes = ['<f4' for name in names]
 
     # These fields will be stored as uint16 type
-    names_uitype = ['id', 'x_mean', 'y_mean', 'x_min_bbox', 'x_max_bbox', 'y_min_bbox', 'y_max_bbox']
+    names_uitype = [
+        'id',
+        'x_mean', 'y_mean',
+        'x_min_bbox', 'x_max_bbox', 'y_min_bbox', 'y_max_bbox',
+        'x_min_bbox_bright', 'x_max_bbox_bright', 'y_min_bbox_bright', 'y_max_bbox_bright',
+        ]
     names_uitype.extend(['x_max_' + name for name in channels.keys()])
     names_uitype.extend(['x_min_' + name for name in channels.keys()])
     names_uitype.extend(['y_max_' + name for name in channels.keys()])
@@ -395,9 +432,10 @@ def crowns_add_features(
     # Define standard parameters
     params_standard = {
         'include_ids': None,
-        'bright_channel' : 'light',
-        'exclude_chm_lower': 5,
-        'exclude_chm_upper': 40,
+        'shadowmask_channel' : 'avg',
+        'shadowmask_width': 101,
+        'shadowmask_thresh_chm_lower': 5,
+        'shadowmask_thresh_chm_upper': 40,
     }
     # Assign standard parameters if not given
     for k in params_standard:
@@ -409,23 +447,33 @@ def crowns_add_features(
     # From polygons to labelimage
     labelimg = transformations.polygons_to_labelimage(crowns['polygons'], params_crowns['shape'])
 
-    # Check if vegetation indices and hls images are in channels if not extend
+    # Define needed channels
     names_needed = [
         'chm',                              # canopy height model
         'light', 'sat', 'hue',              # hls color space: lightness, saturation, hue
         'ndvi', 'ndvire', 'ndre', 'grvi',   # veg. indices
         'gob','rob','reob','nob',           # color ratios normalized to blue
+        'avg',                              # Average over all color channels
         ]
-
+    
+    # If any of the needed channels is non-existent extend
     if not np.all([name in channels.keys() for name in names_needed]):
         transformations.channels_extend(channels)
-
-    # Assing NaNs to all channels at pxs of low and high altitudes
+    
+    # Compute shadow mask based on local otsu thresholding
+    mask = shadow._mask_local_otsu(
+        channels,
+        params['shadowmask_channel'],
+        params['shadowmask_width'],
+        params['shadowmask_thresh_chm_lower'],
+        params['shadowmask_thresh_chm_upper'],
+    )
+    
+    # Assing NaNs to to shadow pixels in all channels
     channels_cleanup = {}
     for key in channels:
         img = channels[key].copy()
-        img[channels['chm'] < params['exclude_chm_lower']] = np.nan
-        img[channels['chm'] > params['exclude_chm_upper']] = np.nan
+        img[~mask] = np.nan
         channels_cleanup[key] = img
 
     # Extract photometric features
@@ -434,7 +482,6 @@ def crowns_add_features(
         channels_cleanup,
         params_channels,
         include_ids = params['include_ids'],
-        bright_channel  = params['bright_channel'],
         )
 
     # Assign features to crowns
@@ -442,8 +489,9 @@ def crowns_add_features(
 
     # Assign parameters
     params_crowns['date_time_photometric'] = transformations.current_datetime()
-    params_crowns['features_photometric_brightness_channel'] = params['bright_channel']
-    params_crowns['features_photometric_exclude_chm_lower'] = params['exclude_chm_lower']
-    params_crowns['features_photometric_exclude_chm_upper'] = params['exclude_chm_upper']
+    params_crowns['features_photometric_shadowmask_channel'] = params['shadowmask_channel']
+    params_crowns['features_photometric_shadowmask_width'] = params['shadowmask_width']
+    params_crowns['features_photometric_shadowmask_thresh_chm_lower'] = params['shadowmask_thresh_chm_lower']
+    params_crowns['features_photometric_shadowmask_thresh_chm_upper'] = params['shadowmask_thresh_chm_upper']
 
     pass

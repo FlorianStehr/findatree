@@ -99,8 +99,21 @@ def channels_extend(
         channels['hue'] = hls[:,:,0]
         channels['light'] = hls[:,:,1]
         channels['sat'] = hls[:,:,2]
+    
+    # Average over all color channels
+    if 'avg' in extend_by:
 
-    ####### Intensity decay around center pixel
+        all = np.empty((channels['blue'].shape[0], channels['blue'].shape[1], 5), dtype=np.float32)
+        all[:,:,0] = channels['blue'].copy()
+        all[:,:,1] = channels['green'].copy()
+        all[:,:,2] = channels['red'].copy()
+        all[:,:,3] = channels['re'].copy()
+        all[:,:,4] = channels['nir'].copy()
+  
+        channels['avg'] = np.mean(all, axis=2)
+    
+    
+    # Intensity decay around center pixel
     if 'decays' in extend_by:
         
         for radius in [int(2**i) for i in range(0,5)]:
@@ -116,7 +129,7 @@ def channels_extend(
                 borderType = cv2.BORDER_REFLECT,
                 )
 
-            img = channels['light'].copy()
+            img = channels['avg'].copy()
             img[~np.isfinite(img)] = 0
 
             kernel = kernel_difference_center_meanring(radius)
@@ -127,19 +140,6 @@ def channels_extend(
                 borderType = cv2.BORDER_REFLECT,
                 )
                 
-                
-    if 'avg' in extend_by:
-
-        all = np.empty((channels['blue'].shape[0], channels['blue'].shape[1], 5), dtype=np.float32)
-        all[:,:,0] = channels['blue'].copy()
-        all[:,:,1] = channels['green'].copy()
-        all[:,:,2] = channels['red'].copy()
-        all[:,:,3] = channels['re'].copy()
-        all[:,:,4] = channels['nir'].copy()
-  
-        channels['avg'] = np.mean(all, axis=2)
-    
-
     pass
 
 #%%
