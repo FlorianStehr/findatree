@@ -60,36 +60,56 @@ def kernel_difference_center_meanring(radius: int) -> np.ndarray:
 #%%
 def channels_extend(
     channels: Dict,
-    extend_by: List = ['ndvi', 'ndvire', 'ndre', 'grvi', 'hsl', 'ratios','decays', 'avg'],
+    extend_by: List = ['color_ratios', 'veg_idxs', 'hsl', 'avg', 'decays'],
     ) -> None:
 
 
     with np.errstate(divide='ignore', invalid='ignore'):  # Avoid division by zero warnings, in this case NaNs will be assigned
-
-        ####### Vegetation indices
-        if 'ndvi' in extend_by:
+        
+        # Color ratios normalized to NIR
+        if 'color_ratios' in extend_by:
+            
+            # Define mask where division by zero and resulting NaN will be replaced with assignment of zero
+            mask_zero = channels['nir'] == 0
+            
+            channels['nblue'] = channels['blue'] / channels['nir']
+            channels['nblue'][mask_zero] = 0
+            
+            channels['ngreen'] = channels['green'] / channels['nir']
+            channels['ngreen'][mask_zero] = 0
+           
+            channels['nred'] = channels['red'] / channels['nir']
+            channels['nred'][mask_zero] = 0
+            
+            channels['nre'] = channels['re'] / channels['nir']
+            channels['nre'][mask_zero] = 0
+            
+        # Vegetation indices
+        if 'veg_idxs' in extend_by:
+            
+            mask_zero = (channels['nir'] + channels['red']) == 0
             channels['ndvi'] = (channels['nir'] - channels['red']) / (channels['nir'] + channels['red'])
-        
-        if 'ndvire' in extend_by:
+            channels['ndvi'][mask_zero] = 0
+            
+            mask_zero = (channels['re'] + channels['red']) == 0
             channels['ndvire'] = (channels['re'] - channels['red']) / (channels['re'] + channels['red'])
-        
-        if 'ndre' in extend_by:
+            channels['ndvire'][mask_zero] = 0
+            
+            mask_zero = (channels['nir'] + channels['re']) == 0
             channels['ndre'] = (channels['nir'] - channels['re']) / (channels['nir'] + channels['re'])
-
-        if 'grvi' in extend_by:
+            channels['ndre'][mask_zero] = 0
+            
+            mask_zero = (channels['green'] + channels['red']) == 0
             channels['grvi'] = (channels['green'] - channels['red']) / (channels['green'] + channels['red'])
-        
-        ####### Color ratios
-        if 'ratios' in extend_by:
-            channels['nob'] = channels['nir'] / channels['blue']
-            channels['reob'] = channels['re'] / channels['blue']
-            channels['rob'] = channels['red'] / channels['blue']
-            channels['gob'] = channels['green'] / channels['blue']
-
-    
+            channels['grvi'][mask_zero] = 0
+            
+            mask_zero = (channels['nir'] + 6 * channels['red'] - 7.5 * channels['blue'] + 1) == 0
+            channels['evi'] = 2.5 * (channels['nir'] - channels['red']) / (channels['nir'] + 6 * channels['red'] - 7.5 * channels['blue'] + 1)
+            channels['evi'][mask_zero] = 0
+            
     # HLS color space
     if 'hsl' in extend_by:
-        
+    
         rgb = np.empty((channels['blue'].shape[0], channels['blue'].shape[1], 3), dtype=np.float32)
         rgb[:,:,0] = channels['red']
         rgb[:,:,1] = channels['green']
@@ -113,7 +133,7 @@ def channels_extend(
         channels['avg'] = np.mean(all, axis=2)
     
     
-    # Intensity decay around center pixel
+    # Height decay around center pixel
     if 'decays' in extend_by:
         
         for radius in [int(2**i) for i in range(0,5)]:
@@ -122,18 +142,7 @@ def channels_extend(
             img[~np.isfinite(img)] = 0
 
             kernel = kernel_difference_center_meanring(radius)
-            channels[f"chm_decay{radius}"] = cv2.filter2D(
-                src = img,
-                ddepth = -1,
-                kernel = kernel,
-                borderType = cv2.BORDER_REFLECT,
-                )
-
-            img = channels['avg'].copy()
-            img[~np.isfinite(img)] = 0
-
-            kernel = kernel_difference_center_meanring(radius)
-            channels[f"light_decay{radius}"] = cv2.filter2D(
+            channels[f"decay{radius}"] = cv2.filter2D(
                 src = img,
                 ddepth = -1,
                 kernel = kernel,

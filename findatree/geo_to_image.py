@@ -153,7 +153,7 @@ def _reproject_to_primary(paths_dict: Dict, px_width: float) -> Tuple[Dict, Dict
                     resampling=Resampling.nearest
                 )
                 
-                # Handel minimal values of each dtype
+                # Handle minimal/maximal values of each dtype
                 try:
                     dest_band[dest_band.astype(source_dtype) == np.iinfo(source_dtype).min] = 1
                     dest_band[dest_band.astype(source_dtype) == np.iinfo(source_dtype).max] = 1

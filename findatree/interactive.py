@@ -36,7 +36,7 @@ class Plotter:
         # Plot content
         self.channels_downscale = 0
         self.show_features = [
-            'id', 'ba', 'sst', 'nbv',
+            'id', 'ba', 'nbv',
             'perc25_brightest_ndvi', 'median_brightest_ndvi', 'perc75_brightest_ndvi',
             ]
 
@@ -107,23 +107,27 @@ class Plotter:
         pass
 
 #%%
-    def _source_add_rgb(self, perc):
+    def _source_add_rgb(self, perc: float, color_code:str = '321', weight_code:str = '111'):
+        
+        # Color code mapping
+        mapper = {
+            1: 'blue',
+            2: 'green',
+            3: 'red',
+            4: 're',
+            5: 'nir',
+        }
         
         data = self.source.data
-
-        # Add RGB channel in uint32 RGBA format
-        red = self.channels['red']
-        green = self.channels['green']
-        blue = self.channels['blue']
-        rgb, rgba = transformations.rgb_to_RGBA(red, green, blue, perc)
-        data['rgb'] = [rgba]
         
-        # Add false RGB channel in uint32 RGBA format
-        red = self.channels['nir']
-        green = self.channels['red']
-        blue = self.channels['green']
+        # Define RGB color channels according to color code
+        red = int(weight_code[0]) * self.channels[mapper[int(color_code[0])]]
+        green = int(weight_code[1]) * self.channels[mapper[int(color_code[1])]]
+        blue = int(weight_code[2]) * self.channels[mapper[int(color_code[2])]]
+        
+        # Add RGB channel in uint32 RGBA format
         rgb, rgba = transformations.rgb_to_RGBA(red, green, blue, perc)
-        data['rgb_false'] = [rgba]
+        data['rgb' + color_code] = [rgba]
 
         # Update
         self.source = bokeh.plotting.ColumnDataSource(data=data)
@@ -200,13 +204,16 @@ class Plotter:
         return fig
 
 #%%
-    def figures_add_rgb(self, perc:float = 0.5, rgb_name='rgb'):
+    def figures_add_rgb(self, perc:float = 0.5, color_code: str = '321', weight_code: str = '111'):
+        
+        # Define name
+        rgb_name = 'rgb' + color_code
         
         # Add figure
         fig = self._figure_create('fig_' + rgb_name)
 
         # Add rgb channel to source
-        self._source_add_rgb(perc)
+        self._source_add_rgb(perc, color_code, weight_code)
 
         # Add rgb image to figure
         img = fig.image_rgba(
@@ -225,8 +232,8 @@ class Plotter:
                 ('(x, y)', '($x{int}, $y{int})'),
             ],
             renderers = [img],
-            description = 'Hover: RGB',
-            name = 'hover_channel_rgb',
+            description = 'Hover: ' + rgb_name.upper(),
+            name = 'hover_channel_' + rgb_name,
         )
         fig.add_tools(hover_tool)
 

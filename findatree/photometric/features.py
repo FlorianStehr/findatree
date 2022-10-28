@@ -44,7 +44,7 @@ def prop_to_idxs(prop, channels):
     # Blue values of the labeled region (shadow mask was already applied in all channels!)
     vals = channels['blue'][idxs]
     
-    # Non-shadow, i.e. bright pixel indices
+    # Non-shadow, i.e. bright pixel indices <-> finite values after assigment of NaNs to shadow pixels
     idxs_bright = (
         idxs[0][np.isfinite(vals)],
         idxs[1][np.isfinite(vals)],
@@ -72,7 +72,7 @@ def idxs_to_areas(idxs, idxs_bright):
 
 def idxs_to_coords(idxs, idxs_bright, channels):
     
-    coord_names_max = ['chm', 'avg']
+    coord_names_max = ['chm']
     coord_names = []
     coords = []
     
@@ -118,173 +118,77 @@ def idxs_to_coords(idxs, idxs_bright, channels):
         
     
     #### Non shadow pixels
+    coord_names.extend(['x_min_bbox_bright', 'x_max_bbox_bright', 'y_min_bbox_bright', 'y_max_bbox_bright'])
+    
     if len(idxs_bright[0]) > 0:
+        
         # Add bounding box minimum of all pixels in x in pixels
-        coord_names.append('x_min_bbox_bright')
         coords.append(np.min(idxs_bright[1]))
 
         # Add bounding box maximum of all pixels in x in pixels
-        coord_names.append('x_max_bbox_bright')
         coords.append(np.max(idxs_bright[1]))
 
         # Add bounding box minimum of all pixels in y in pixels
-        coord_names.append('y_min_bbox_bright')
         coords.append(np.min(idxs_bright[0]))
 
         # Add bounding box maximum of all pixels in y in pixels
-        coord_names.append('y_max_bbox_bright')
         coords.append(np.max(idxs_bright[0]))
+    
     else:
-        coord_names.extend(['x_min_bbox_bright', 'x_max_bbox_bright', 'y_min_bbox_bright', 'y_max_bbox_bright'])
         coords.extend([np.nan]*4)
-        
+    
+    # Convert list of coordinates to np.ndarray 
+    coords = np.array(coords, dtype=np.float32)
+    
+    
     return coords, coord_names
     
-'''  
+
 #%%
-def prop_to_intensitycoords(prop, channels):
-    
-    ####################### Define image-indices and channel values of the segment
-
-    # Channel names that are used for computation of:
-    #    * intensity weighted metrics
-    #    * xy_max, i.e. location of pixel with maximum intensity
-    names_intensity = [
-        'chm',                              # canopy height model
-        'light', 'sat', 'hue',              # hls color space: lightness, saturation, hue
-        'ndvi', 'ndvire', 'ndre', 'grvi',   # veg. indices
-        'blue','green','red','re','nir',    # absolute colors
-        'gob','rob','reob','nob',           # color ratios normalized to blue
-        'avg',                              # average over all channels
+def idxs_to_intensities(idxs, channels):
+   
+    # Channel names that are used for computation of intensity metrics
+    names = [
+        'chm',                                      # canopy height model
+        'blue','green','red','re','nir',            # absolute colors
+        'avg',                                      # average of all absolute colors
+        'nblue','ngreen','nred','nre',              # color ratios normalized to NIR
+        'light', 'sat', 'hue',                      # hls color space: lightness, saturation, hue
+        'ndvi', 'ndvire', 'ndre', 'grvi', 'evi',    # veg. indices
         ]
-
-    names_xy_max = ['chm', 'light']
+        
+    # Percentile values that are calculated for each intensity
+    percs = [5, 25, 50, 75, 95]
     
-    # These are all the channels for preparation of the flat channel array
-    names = names_xy_max.copy()
-    names.extend([name for name in names_intensity if name not in names_xy_max])
-
-    # Indices of the label, in image coordinates
-    idxs = prop['coords']
-    idxs = (idxs[:,0], idxs[:,1])
-
-    # Prepare flat array of values of all channels specified by names. Row corresponds to channel.
-    channels_flat = np.zeros(
-        (len(names), len(idxs[0])),
-        dtype=np.float32,
-        )
-    for i, name in enumerate(names):
-        img = channels[name]
-        channels_flat[i,:] = img[idxs]
-
-    ####################### Define brightest indices and values of the segment
-
-    # Which row in channels_flat corresponds to brightness channel?
-    row_bright = names.index(bright_channel)
+    # Total number of features that are computed
+    n_features = len(names) * len(percs)
     
-    # Get brightness values
-    bright_vals = channels_flat[row_bright, :]
-
-    # Set the threshold for bright pixels to upper 75 percentile of brightness values
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", category=RuntimeWarning)
-        bright_thresh = np.nanpercentile(bright_vals, 75)
-
-    # Get columns where brightness values are above threshold, in channels_flat coordinates.
-    cols_bright = np.where(bright_vals > bright_thresh)[0]
     
-    # Treat case of zero brightest pixels -> Assign index of maximum value
-    if len(cols_bright) == 0:
-        cols_bright = [np.argmax(bright_vals)]
+    # Assign intensities and names
     
-    # These are the indices of the brightest pixels, in image coordinates.
-    idxs_bright = (idxs[0][cols_bright], idxs[1][cols_bright])
-
-    # These are the brightest values of all channels_flat
-    channels_flat_bright = channels_flat[:, cols_bright]
-
-
-    ####################### Feature extraction
-
     # Init data and names
-    features = []
-    names_features = []
+    intensities = []
+    intensity_names = []
+    
+    # Extend intensity_names
+    intensity_names.extend(
+        [f"perc{perc}_" + name for name in names for perc in percs]
+    )
+    
+    # Extend intensities treating case of completely shadowed regions
+    if len(idxs[0]) > 0:
+        intensities.extend(
+            [np.percentile(channels[name][idxs], perc) for name in names for perc in percs]
+        )
+        
+    else:
+        intensities.extend([np.nan]*n_features)
 
-    # This is used to catch all the numpy warnings caused by numpy.nanmean() and alike 
-    # when all values in one crown are NaNs. Can be ignored, because NaNs are assigned that can be filtered out later.
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", category=RuntimeWarning)
+    # Convert list of intensities to np.ndarray 
+    intensities = np.array(intensities, dtype=np.float32)
 
-        ############# All pixels in segment
+    return intensities, intensity_names
 
-        # Add minimum value of each channel
-        names_features.extend(['min_' + name for name in names_intensity])
-        features.extend( list( np.nanmin(channels_flat, axis=1) ) )
-
-        # Add maximum value of each channel
-        names_features.extend(['max_' + name for name in names_intensity])
-        features.extend( list( np.nanmax(channels_flat, axis=1) ) )
-
-        # Add mean value of each channel
-        names_features.extend(['mean_' + name for name in names_intensity])
-        features.extend( list( np.nanmean(channels_flat, axis=1) ) )
-
-        # Add std value of each channel
-        names_features.extend(['std_' + name for name in names_intensity])
-        features.extend( list( np.nanstd(channels_flat, axis=1) ) )
-
-        # Add median value of each channel
-        names_features.extend(['median_' + name for name in names_intensity])
-        features.extend( list( np.nanmedian(channels_flat, axis=1) ) )
-
-        # Add 75 percentile value of each channel
-        names_features.extend(['perc75_' + name for name in names_intensity])
-        features.extend( list( np.nanpercentile(channels_flat, 75, axis=1) ) )
-
-        # Add 25 percentile value of each channel
-        names_features.extend(['perc25_' + name for name in names_intensity])
-        features.extend( list( np.nanpercentile(channels_flat, 25, axis=1) )
-
-
-
-        ############# Brightest pixels in segment
-
-        # Add minimum value of each channel of brightest pixels
-        names_features.extend(['min_bright_' + name for name in names_intensity])
-        features.extend( list( np.nanmin(channels_flat_bright, axis=1) ) )
-
-        # Add maximum value of each channel of brightest pixels
-        names_features.extend(['max_bright_' + name for name in names_intensity])
-        features.extend( list( np.nanmin(channels_flat_bright, axis=1) ) )
-
-        # Add mean value of brightest pixels of each channel 
-        names_features.extend(['mean_bright_' + name for name in names_intensity])
-        features.extend( list( np.nanmean(channels_flat_bright, axis=1) ) )
-
-        # Add std value of brightest pixels of each channel
-        names_features.extend(['std_bright_' + name for name in names_intensity])
-        features.extend( list( np.nanstd(channels_flat_bright, axis=1) ) )
-
-        # Add median value of brightest pixels of each channel
-        names_features.extend(['median_bright_' + name for name in names_intensity])
-        features.extend( list( np.nanmedian(channels_flat_bright, axis=1) ) )
-
-        # Add 75 percentile value of brightest pixels of each channel
-        names_features.extend(['perc75_bright_' + name for name in names_intensity])
-        features.extend( list( np.nanpercentile(channels_flat_bright, 75, axis=1) ) )
-
-        # Add 25 percentile value of brightest pixels of each channel
-        names_features.extend(['perc25_bright_' + name for name in names_intensity])
-        features.extend( list( np.nanpercentile(channels_flat_bright, 25, axis=1) ) )
-
-
-    ############# Create final output array
-
-    features = np.array(features, dtype=np.float32)
-
-    return features, names_features
-
-'''
 
 #%%
 def prop_to_allfeatures(prop, channels, px_width):
@@ -310,11 +214,11 @@ def prop_to_allfeatures(prop, channels, px_width):
     # Get coordinates of all and non-shadow pixels in labeled region
     coords, coord_names = idxs_to_coords(idxs, idxs_bright, channels)
 
-    # Get intensities and coordinates
-    # intcoords, intcoord_names = prop_to_intensitycoords(
-        # prop,
-        # channels, 
-        # )
+    # Get intensities of non-shadow pixels only
+    intensities, intensity_names = idxs_to_intensities(
+        idxs_bright,
+        channels, 
+        )
 
     # Concatenate all props and corresponding names
     features = np.concatenate(
@@ -323,10 +227,10 @@ def prop_to_allfeatures(prop, channels, px_width):
         ratios,
         areas,
         coords,
-        # intcoords,
+        intensities,
         ),
     )
-    names = label_name + distance_names + ratio_names + area_names + coord_names #+ intcoord_names
+    names = label_name + distance_names + ratio_names + area_names + coord_names + intensity_names
 
     return features, names
 
@@ -347,7 +251,9 @@ def labelimage_extract_features(
         props_include = [prop for prop in props if prop['label'] in include_ids]
     else:
         props_include = props
-
+    
+    #### Compute features based on regionprops
+    
     # Loop through all labels and extract properties as np.ndarray
     for i, prop in enumerate(props_include):
         
@@ -373,26 +279,26 @@ def labelimage_extract_features(
             # Assignment to features
             features[i, :] = features_i
 
-    '''
-    # Assign decays
-    decay_channel_names = ['chm', 'avg']
+    
+    #### Add height decay features
 
-    for channel_name in decay_channel_names:
-        # Get peak coordinates
-        row_peak_idx = features[:, names.index('y_max_' + channel_name)].astype(np.uint16)
-        col_peak_idx = features[:, names.index('x_max_' + channel_name)].astype(np.uint16)  
+    # Get height peak coordinates
+    row_peak_idx = features[:, names.index('y_max_chm')].astype(np.uint16)
+    col_peak_idx = features[:, names.index('x_max_chm')].astype(np.uint16)  
 
-        # Loop through all decay channels and collect decay at radius from peak
-        for i in [int(2**i) for i in range(5)]:
-            # Name of decay_channel and append to names
-            decay_name = channel_name + f"_decay{i}"
-            names.append(decay_name)
+    # Loop through all decay channels and collect decay at radius from peak
+    for i in [int(2**i) for i in range(5)]:
+        
+        # Define decay name and add to feature names
+        decay_name = f"decay{i}"
+        names.append(decay_name)
 
-            # Get decay values at peak and add to features
-            peak_decay = channels[decay_name][row_peak_idx, col_peak_idx].reshape(-1,1)
-            features = np.concatenate([features, peak_decay], axis=1)
-    '''
-
+        # Get decay values at peak and add to features
+        peak_decay = channels[decay_name][row_peak_idx, col_peak_idx].reshape(-1,1)
+        features = np.concatenate([features, peak_decay], axis=1)
+            
+    
+    #### dtype conversions
     # Prepare dtype for conversion of features to structured numpy array
     dtypes = ['<f4' for name in names]
 
@@ -449,11 +355,13 @@ def crowns_add_features(
 
     # Define needed channels
     names_needed = [
-        'chm',                              # canopy height model
-        'light', 'sat', 'hue',              # hls color space: lightness, saturation, hue
-        'ndvi', 'ndvire', 'ndre', 'grvi',   # veg. indices
-        'gob','rob','reob','nob',           # color ratios normalized to blue
-        'avg',                              # Average over all color channels
+        'chm',                                              # canopy height model
+        'blue','green','red','re','nir',                    # absolute colors
+        'avg',                                              # average of all absolute colors
+        'nblue','ngreen','nred','nre',                      # color ratios normalized to NIR
+        'light', 'sat', 'hue',                              # hls color space: lightness, saturation, hue
+        'ndvi', 'ndvire', 'ndre', 'grvi', 'evi',            # veg. indices
+        'decay1', 'decay2', 'decay4', 'decay8', 'decay16',  # height decays around maximum pixel
         ]
     
     # If any of the needed channels is non-existent extend
@@ -469,6 +377,9 @@ def crowns_add_features(
         params['shadowmask_thresh_chm_upper'],
     )
     
+    # Assign mask to channels 
+    channels['mask'] = mask.astype(np.float32)
+     
     # Assing NaNs to to shadow pixels in all channels
     channels_cleanup = {}
     for key in channels:
