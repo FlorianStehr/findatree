@@ -97,7 +97,7 @@ class Plotter:
         data = self.source.data
 
         try:
-            data[channel_name] = [self.channels[channel_name].copy()]
+            data[channel_name] = [np.flip(self.channels[channel_name].copy(), axis=0)]  # Flip Orientation for correct north/south
         except:
             raise KeyError(f"`{channel_name}` not in self.channels")
 
@@ -127,7 +127,7 @@ class Plotter:
         
         # Add RGB channel in uint32 RGBA format
         rgb, rgba = transformations.rgb_to_RGBA(red, green, blue, perc)
-        data['rgb' + color_code] = [rgba]
+        data['rgb' + color_code] = [np.flip(rgba, axis=0)]  # Flip Orientation for correct north/south
 
         # Update
         self.source = bokeh.plotting.ColumnDataSource(data=data)
@@ -149,7 +149,7 @@ class Plotter:
         polys = crowns['polygons']
         patches_data = {
             'xs' : [poly[:, 0] / 2**downscale for poly in polys.values()],
-            'ys' : [offset - (poly[:, 1] / 2**downscale) for poly in polys.values()],
+            'ys' : [poly[:, 1] / 2**downscale for poly in polys.values()],
         }
 
         # Prepare patches source: Add features

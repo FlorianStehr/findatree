@@ -354,7 +354,6 @@ def load_shapefile(dir_names: List, params_channels: Dict, remove_outliers=True,
         # Define which attributes will be included in final output
         attr_names_include = ['Enr', 'Bnr', 'Ba', 'BK','BHD_2020', 'Alter_2020', 'KKL', 'NBV', 'SST', 'Gilb', 'Kommentar', 'Sicherheit']
         
-
         # Init crowns polygons dictionary
         crowns_polys = {}
 
@@ -382,7 +381,7 @@ def load_shapefile(dir_names: List, params_channels: Dict, remove_outliers=True,
 
             # Reduce records to included attributes
             recs = [val for i, val in enumerate(recs) if attr_names[i] in attr_names_include]
-
+            
             # Add id at beginning of records
             recs = [idx + 1] + recs
 
