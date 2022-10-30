@@ -229,11 +229,10 @@ def affine_numpy_to_resterio(affine_numpy: np.ndarray) -> rasterio.Affine:
     return affine_rasterio
 
 
-def geojson_records_fields_to_numpy_dtype(fields, include_names: List[str] = None) -> np.dtype:
+def geojson_records_fields_to_numpy_dtype(fields, exclude_names: List[str] = None) -> np.dtype:
 
-    # Set inlcuded attributes to all fields (except deletion flag) if None
-    if include_names == None:
-        include_names = [f[0] for f in fields[1:]]
+    # Exclude some fields according to exclude_names
+    include_names = [f[0] for f in fields[1:] if f[0] not in exclude_names]
 
     # Initialize dtypes with 'id' field
     dtypes = [('id', 'u2')]

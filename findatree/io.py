@@ -351,14 +351,17 @@ def load_shapefile(dir_names: List, params_channels: Dict, remove_outliers=True,
         n_crowns = len(sf)
         attr_names = [f[0] for f in sf.fields[1:]]
 
-        # Define which attributes will be included in final output
-        attr_names_include = ['Enr', 'Bnr', 'Ba', 'BK','BHD_2020', 'Alter_2020', 'KKL', 'NBV', 'SST', 'Gilb', 'Kommentar', 'Sicherheit']
+        # Define which attributes will be excluded in final output
+        attr_names_exclude = ['Tnr']
+        attr_names_include = [name for name in attr_names if name not in attr_names_exclude]
         
         # Init crowns polygons dictionary
         crowns_polys = {}
 
         # Init crowns records as numpy structed array
-        dtype = transformations.geojson_records_fields_to_numpy_dtype(sf.fields, attr_names_include)
+        dtype = transformations.geojson_records_fields_to_numpy_dtype(sf.fields, attr_names_exclude)
+        
+        print(dtype)
         crowns_recs = np.zeros(n_crowns, dtype = dtype)
         
 
@@ -600,95 +603,3 @@ def allhdf5s_crowns_features_to_dataframe(
 
 
     return features, params_features
-
-#%%
-# def allhdf5s_crowns_features_to_dataframe(
-#     dir_hdf5s: str,
-#     crowns_type = 'crowns_human',
-#     ) -> pd.DataFrame:
-    
-#     assert crowns_type in ['crowns_human', 'crowns_water'], f"`{crowns_type}` is not a valid crowns_type."
-    
-#     # Get paths to all available hdf5 files
-#     paths = [os.path.join(dir_hdf5s, name) for name in os.listdir(dir_hdf5s) if os.path.splitext(name)[-1] == '.hdf5']
-
-#     # Init list of features, elements will pd.DataFrames
-#     feats_terr = []
-#     feats_photo = []
-#     # Init list of features keys which will correspond to tnr identifier
-#     feats_keys = []
-#     # Init dict of combined crown parameters
-#     params_crowns = {}
-
-#     for path in paths:
-        
-#         # Load crowns_type group features only in each hdf5
-#         data, params_data = load_hdf5(path, groups = [crowns_type], features_only=True)
-        
-#         # Try to append to photometric feature to list
-#         try:
-#             feats_photo.append( pd.DataFrame(data[crowns_type]['features']['photometric']) )
-#         except:
-#             feats_photo.append( pd.DataFrame([]))
-#             print(f"Warning: Group `{crowns_type + '/features/photometric'}` not found under path: {path}")
-
-#         if crowns_type == 'crowns_human':
-#             # Try to append to terrestrial feature to list
-#             try:
-#                 feats_terr.append( pd.DataFrame(data[crowns_type]['features']['terrestrial']) )
-#             except:
-#                 feats_terr.append( pd.DataFrame([]))
-#                 print(f"Warning: Group `{'features/terrestrial'}` not found under path: {path}")
-        
-#         try:
-#             # Append keys == tnr identifiers to list
-#             feats_keys.append(int(params_data[crowns_type]['tnr']))
-            
-#             # Add crown_type group parameters to combined parameters under key tnr
-#             params_crowns[int(params_data[crowns_type]['tnr'])] = params_data[crowns_type]
-
-#         except:
-#             feats_keys.append('0')
-#             params_crowns[0] = {}
-
-
-#     ############## Combine photometric features
-#     # Combine feats lists to one pd.DataFrame containing all tnrs
-#     df_photo = pd.concat(
-#         feats_photo,
-#         keys=feats_keys,
-#         names=['tnr'],
-#         )
-#     # Convert MultiIndex pd.DataFrame to standard pd.DataFrame by resetting tnr identifiers as index
-#     df_photo.reset_index(level=['tnr'], inplace=True)
-#     # Continuous relabeling of index
-#     df_photo.reset_index(inplace=True, drop=True)
-#     # Return df will be df_photo
-#     df_combi = df_photo.copy()
-
-#     if crowns_type == 'crowns_human':
-
-#         ############## Combine terrestrial features
-#         # Combine feats lists to one pd.DataFrame containing all tnrs
-#         df_terr = pd.concat(
-#             feats_terr,
-#             keys=feats_keys,
-#             names=['tnr'],
-#             )
-#         # Convert MultiIndex pd.DataFrame to standard pd.DataFrame by resetting tnr identifiers as index
-#         df_terr.reset_index(level=['tnr'], inplace=True)
-#         # Continuous relabeling of index
-#         df_terr.reset_index(inplace=True, drop=True)
-#         # Drop tnr number and id to prevent double entry
-#         df_terr.drop(columns=['tnr', 'id'], inplace=True)
-
-#         ############## Combine terrestic and photometric features to return df
-#         assert len(df_terr) == len(df_photo), "Terrestric and photometric features do not contain same number of crowns"
-#         df_combi = pd.concat(
-#             [df_terr, df_photo],
-#             axis=1,  
-#         )
-#         # Remove entries with tnr of 0
-#         df_combi = df_combi.query('tnr > 0')
-
-#     return df_combi, params_crowns
