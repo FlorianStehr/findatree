@@ -360,8 +360,6 @@ def load_shapefile(dir_names: List, params_channels: Dict, remove_outliers=True,
 
         # Init crowns records as numpy structed array
         dtype = transformations.geojson_records_fields_to_numpy_dtype(sf.fields, attr_names_exclude)
-        
-        print(dtype)
         crowns_recs = np.zeros(n_crowns, dtype = dtype)
         
 
