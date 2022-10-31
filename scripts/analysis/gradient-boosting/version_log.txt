@@ -1,27 +1,13 @@
 v01:
-- classifier: random_forest
+- classifier: histogram_based_gradient_boosting
 - labels: [conifers, broadleaf]
 - scoring: balanced_accuracy
 - weather: all
 - folds: StratifiedShuffleSplit
 
 v02:
-- classifier: random_forest
-- labels: [healthy (sst=0,1,2), damaged(sst=3), dead(sst=4)]
+- classifier: histogram_based_gradient_boosting
+- labels: [healthy (nbv < 70), damaged_dead(nbv>=70)]
 - scoring: balanced_accuracy
 - weather: all
-- folds: StratifiedShuffleSplit
-
-v03:
-- classifier: random_forest
-- labels: [conifers, broadleaf]
-- scoring: balanced_accuracy
-- weather: sunny
-- folds: StratifiedShuffleSplit
-
-v04:
-- classifier: random_forest
-- labels: [conifers, broadleaf]
-- scoring: balanced_accuracy
-- weather: cloudy
 - folds: StratifiedShuffleSplit

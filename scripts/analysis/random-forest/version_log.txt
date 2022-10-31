@@ -5,12 +5,7 @@ v01:
 - weather: all
 - folds: StratifiedShuffleSplit
 
-v02:
-- classifier: random_forest
-- labels: [healthy (sst=0,1,2), damaged(sst=3), dead(sst=4)]
-- scoring: balanced_accuracy
-- weather: all
-- folds: StratifiedShuffleSplit
+v02: -> Not done, but gradient boosting
 
 v03:
 - classifier: random_forest
