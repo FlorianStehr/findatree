@@ -21,3 +21,4 @@ dependencies:
   - conda-forge::pyshp
   - conda-forge::geojson
   - conda-forge::shapely
+  - conda-forge::py-xgboost
