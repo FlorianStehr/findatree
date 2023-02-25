@@ -6,7 +6,7 @@ setup(
    description='Detect trees in drone data',
    author='Stehr Florian',
    author_email='floraian.stehr@gmail.com',
-   url="http://www.github.com/FlorianStehr/findatree",
+   url="https://github.com/FlorianStehr/findatree",
    packages=['findatree'],
    classifiers=[
         "Programming Language :: Python :: 3.9",

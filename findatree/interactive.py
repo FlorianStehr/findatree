@@ -10,7 +10,7 @@ import bokeh.plotting
 import bokeh.models
 import bokeh.layouts
 
-from bokeh.plotting.figure import Figure
+from bokeh.plotting import figure as Figure
 from bokeh.models import Column
 from bokeh.models import Toggle
 
@@ -370,7 +370,7 @@ class Plotter:
             # Define title division
             div = bokeh.models.Div(
                 text=f"{key}".upper(),
-                style={'font-size': self.title_font_size},
+                styles={'font-size': self.title_font_size},
                 width=self.width,
                 height=self.height // 16,
                 name = f"div_{key}",

@@ -11,8 +11,8 @@ To create a [conda](https://www.anaconda.com/) environment with all the necessar
 [environment.yml](https://github.com/FlorianStehr/findatree/blob/master/environment.yml). 
 This will create a conda environment `findatree` with all the necessary depencies:
  
-```console
-conda create -f environment.yml
+```sh
+conda env create -f environment.yml
 ```
 
 Enjoy :)

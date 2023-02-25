@@ -1,0 +1,61 @@
+#### Font
+font.size: 8
+
+#### Figure
+figure.figsize: 3, 2
+figure.edgecolor:white
+figure.facecolor: None
+figure.subplot.bottom:0.2
+figure.subplot.top:0.99
+figure.subplot.left:0.2
+figure.subplot.right:0.99
+
+#### Axis
+axes.facecolor:none
+axes.edgecolor:black
+axes.linewidth:1
+
+#### Grid
+grid.color: None
+grid.alpha: 0
+
+#### Markers, Lines
+lines.linewidth:1
+lines.markersize:5
+errorbar.capsize:2
+axes.prop_cycle: cycler('color', ['blue','green','red','magenta','darkred','black','yellow','gray'])
+
+#### Font
+# xtick.labelsize:8
+# ytick.labelsize:8
+# figure.titlesize:8
+# legend.fontsize:8
+# axes.titlesize:8
+# axes.labelsize:8
+axes.labelcolor:black
+mathtext.default:regular
+
+#### Ticks
+xtick.color:black
+ytick.color:black
+ytick.minor.visible: False
+xtick.minor.visible: False
+xtick.direction: out
+ytick.direction: out
+
+#### Legend
+legend.borderaxespad:0.1
+legend.loc:upper right
+legend.markerscale:1
+legend.facecolor: None
+legend.edgecolor: None
+
+### Images
+image.interpolation: none
+image.resample: False
+
+#### Figure saving
+figure.dpi:150
+savefig.dpi:200
+savefig.transparent:True
+savefig.format: 'pdf'
