@@ -1,15 +1,3 @@
 __pycache__
-/findatree/__pycache__
-/findatree.egg-info
-/build
-/dist
-.gitignore~
-/docs/_build
-/docs/_static
-/docs/_templates
-/findatree/.ipynb_checkpoints
-/scripts/.ipynb_checkpoints
-
-/dask-worker-space
-/findatree/dask-worker-space
-/scripts/dask-worker-space
+.ipynb_checkpoints
+.venv
