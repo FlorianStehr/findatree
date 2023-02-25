@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "findatree"
 version = "0.1.1"
-description = "Detect, Visualize & Analyze trees in drone data"
+description = "Open-source object-based analysis of forest health using drone data."
 authors = ["Stehr Florian"]
 readme = "README.md"
 

@@ -79,7 +79,8 @@ class Plotter:
         
         # Add dimensions in pxs to source
         data['x'] = [0]
-        data['y'] = [ params_channels_down['shape'][0] ]
+        # data['y'] = [ params_channels_down['shape'][0] ]
+        data['y'] = [0]
         data['width'] = [ params_channels_down['shape'][1] ]
         data['height'] = [ params_channels_down['shape'][0] ]
 
@@ -149,7 +150,7 @@ class Plotter:
         polys = crowns['polygons']
         patches_data = {
             'xs' : [poly[:, 0] / 2**downscale for poly in polys.values()],
-            'ys' : [poly[:, 1] / 2**downscale for poly in polys.values()],
+            'ys' : [(offset-poly[:, 1]) / 2**downscale for poly in polys.values()],
         }
 
         # Prepare patches source: Add features
