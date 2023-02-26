@@ -15,10 +15,9 @@ tqdm = "^4.64.1"
 h5py = "^3.8.0"
 
 [tool.poetry.group.editor.dependencies]
-autopep8 = "^2.0.1"
-notebook = "^6.5.2"
-jupyter-contrib-nbextensions = "^0.7.0"
 ipykernel = "^6.21.2"
+jupyterlab = "^3.6.1"
+jupyterthemes = "^0.20.0"
 
 [tool.poetry.group.plot.dependencies]
 matplotlib = "^3.7.0"
