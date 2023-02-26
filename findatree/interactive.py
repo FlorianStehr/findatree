@@ -150,11 +150,7 @@ class Plotter:
         polys = crowns['polygons']
         patches_data = {
             'xs' : [poly[:, 0] / 2**downscale for poly in polys.values()],
-<<<<<<< HEAD
-            'ys' : [(offset-poly[:, 1]) / 2**downscale for poly in polys.values()],
-=======
             'ys' : [offset - (poly[:, 1] / 2**downscale) for poly in polys.values()],
->>>>>>> ad17d6a (Try large file cleanup by hard reset)
         }
 
         # Prepare patches source: Add features
